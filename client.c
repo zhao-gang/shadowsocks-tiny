@@ -45,7 +45,7 @@ int client_do_local_read(int sockfd, struct link *ln)
 	if (do_cipher_send(ln->server_sockfd, ln) == -1)
 		goto out;
 
-	sock_debug(sockfd, "%s returned", __func__);
+	sock_debug(sockfd, "%s returned successfully", __func__);
 	return 0;
 
 out:
@@ -65,7 +65,7 @@ int client_do_server_read(int sockfd, struct link *ln)
 	if (do_plain_send(ln->local_sockfd, ln) == -1)
 		goto out;
 
-	sock_debug(sockfd, "%s returned", __func__);
+	sock_debug(sockfd, "%s returned successfully", __func__);
 	return 0;
 
 out:
