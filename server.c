@@ -33,7 +33,7 @@ int server_do_remote_read(int sockfd, struct link *ln)
 	if (encrypt(ln) == -1)
 		goto out;
 
-	if (do_cipher_send(ln->server_sockfd, ln) == -1)
+	if (do_cipher_send(ln->local_sockfd, ln) == -1)
 		goto out;
 
 	sock_info(sockfd, "%s returned successfully", __func__);
@@ -121,8 +121,7 @@ clean:
 	return -1;
 }
 
-int server_do_pollout(int sockfd, struct link *ln,
-		      struct pollfd *clients, int nfds)
+int server_do_pollout(int sockfd, struct link *ln)
 {
 	int optval;
 	int optlen = sizeof(optval);
@@ -291,7 +290,7 @@ int main(int argc, char **argv)
 					continue;
 				}
 
-				server_do_pollin(sockfd, ln, clients, nfds);
+				server_do_pollin(sockfd, ln);
 			}
 
 			if (clients[i].revents & POLLOUT) {
@@ -302,7 +301,7 @@ int main(int argc, char **argv)
 					continue;
 				}
 
-				server_do_pollout(sockfd, ln, clients, nfds);
+				server_do_pollout(sockfd, ln);
 			}
 		}
 	}
