@@ -282,7 +282,8 @@ int main(int argc, char **argv)
 
 	while (1) {
 		pr_debug("start polling\n");
-		if (poll(clients, nfds, -1) == -1)
+		ret = poll(clients, nfds, -1);
+		if (ret == -1)
 			err_exit("poll error");
 		pr_info("poll returned %d\n", ret);
 
