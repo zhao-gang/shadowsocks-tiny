@@ -47,8 +47,6 @@ out:
 /* read encrypt from local, decrypt and send to remote */
 int server_do_local_read(int sockfd, struct link *ln)
 {
-	struct addrinfo *r_info;
-
 	if (do_cipher_read(sockfd, ln) == -1)
 		goto out;
 
@@ -56,13 +54,19 @@ int server_do_local_read(int sockfd, struct link *ln)
 		goto out;
 
 	if (!(ln->state & LINK_SERVER)) {
-		r_info = get_addr(ln);
+		/* xxx: test */
+		/* r_info = get_addr(ln); */
+		if (getaddrinfo("127.0.0.1", "7", NULL, &ln->server) != 0) {
+			pr_warn("getaddrinfo failed: %s\n",
+				gai_strerror(errno));
+			goto out;
+		}
 
-		if (connect_server(ln, r_info) == -1)
+		if (connect_server(ln, ln->server) == -1)
 			goto out;
 	}
 
-	if (do_plain_send(ln->local_sockfd, ln) == -1)
+	if (do_plain_send(ln->server_sockfd, ln) == -1)
 		goto out;
 
 	sock_info(sockfd, "%s returned successfully", __func__);
@@ -73,8 +77,7 @@ out:
 	return -1;
 }
 
-int server_do_pollin(int sockfd, struct link *ln,
-		     struct pollfd *clients, int nfds)
+int server_do_pollin(int sockfd, struct link *ln)
 {
 	if (sockfd == ln->local_sockfd) {
 		if (!(ln->state & LINK_SERVER))
@@ -154,7 +157,7 @@ int server_do_pollout(int sockfd, struct link *ln)
 		}
 
 		/* write to server */
-		if (do_cipher_send(sockfd, ln) == -1)
+		if (do_plain_send(sockfd, ln) == -1)
 			goto clean;
 		else
 			goto out;
