@@ -427,7 +427,8 @@ int connect_server(struct link *ln, struct addrinfo *info)
 				 * handle it later */
 				if (errno == EINPROGRESS) {
 					poll_set(sockfd, POLLOUT);
-					sock_info(sockfd, "connect() pending");
+					sock_info(sockfd, "%s: connect() %s",
+						  __func__, strerror(errno));
 					return 0;
 				} else {
 					goto err;
@@ -437,7 +438,7 @@ int connect_server(struct link *ln, struct addrinfo *info)
 			/* sucessfully connected */
 			ln->state |= LINK_SERVER;
 			poll_add(sockfd, POLLIN);
-			sock_info(sockfd, "connected");
+			sock_info(sockfd, "%s: connected", __func__);
 			return 0;
 		}
 
