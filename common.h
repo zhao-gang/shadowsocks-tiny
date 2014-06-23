@@ -91,7 +91,6 @@ int poll_rm(int sockfd, short events);
 int poll_del(int sockfd);
 struct link *create_link(int sockfd);
 struct link *get_link(int sockfd);
-int unlink_link(struct link *ln);
 void destroy_link(struct link *ln);
 struct addrinfo *get_addr(struct link *ln);
 int connect_server(struct link *ln, struct addrinfo *info);

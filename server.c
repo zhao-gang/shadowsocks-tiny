@@ -117,10 +117,6 @@ out:
 	return 0;
 clean:
 	sock_info(sockfd, "%s: closed", __func__);
-	close(ln->local_sockfd);
-	close(ln->server_sockfd);
-	poll_del(ln->local_sockfd);
-	poll_del(ln->server_sockfd);
 	destroy_link(ln);
 	return -1;
 }
@@ -170,10 +166,6 @@ out:
 	return 0;
 clean:
 	sock_info(sockfd, "%s: closed", __func__);
-	close(ln->local_sockfd);
-	close(ln->server_sockfd);
-	poll_del(ln->local_sockfd);
-	poll_del(ln->server_sockfd);
 	destroy_link(ln);
 	return -1;
 }

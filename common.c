@@ -311,7 +311,7 @@ struct link *get_link(int sockfd)
 	return NULL;
 }
 
-int unlink_link(struct link *ln)
+static int unlink_link(struct link *ln)
 {
 	struct link *head = link_head;
 	struct link *previous = link_head;
@@ -348,7 +348,7 @@ out:
 	return 0;
 }
 
-void destroy_link(struct link *ln)
+static void free_link(struct link *ln)
 {
 	if ((unlink_link(ln)) == -1) {
 		pr_link_warn(ln);
@@ -358,9 +358,20 @@ void destroy_link(struct link *ln)
 	if (ln->ctx)
 		EVP_CIPHER_CTX_free(ln->ctx);
 
+	if (ln->server)
+		freeaddrinfo(ln->server);
+
 	free(ln);
-	pr_link_debug(ln);
 	pr_debug("%s: succeeded\n", __func__);
+}
+
+void destroy_link(struct link *ln)
+{
+	poll_del(ln->local_sockfd);
+	poll_del(ln->server_sockfd);
+	close(ln->local_sockfd);
+	close(ln->server_sockfd);
+	free_link(ln);
 }
 
 int do_listen(struct addrinfo *info)
