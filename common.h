@@ -38,6 +38,7 @@ struct link {
 	int cipher_len;
 	const EVP_CIPHER *evp_cipher;
 	EVP_CIPHER_CTX *ctx;
+	struct addrinfo *server;
 	unsigned char iv[EVP_MAX_IV_LENGTH];
 	unsigned char key[EVP_MAX_KEY_LENGTH];
 	unsigned char text[PLAIN_BUF_SIZE];
