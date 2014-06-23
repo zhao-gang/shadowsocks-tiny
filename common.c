@@ -544,6 +544,7 @@ int do_plain_send(int sockfd, struct link *ln)
 
 	ln->state &= ~LINK_PLAIN_PENDING;
 	poll_rm(sockfd, POLLOUT);
+	poll_add(sockfd, POLLIN);
 	pr_text(ln);
 	sock_debug(sockfd, "%s: send() returned %d", __func__, ret);
 	return 0;
@@ -571,6 +572,7 @@ int do_cipher_send(int sockfd, struct link *ln)
 
 	ln->state &= ~LINK_CIPHER_PENDING;
 	poll_rm(sockfd, POLLOUT);
+	poll_add(sockfd, POLLIN);
 	pr_cipher(ln);
 	sock_debug(sockfd, "%s: send() returned %d", __func__, ret);
 	return 0;
