@@ -13,6 +13,8 @@
 #include "crypto.h"
 #include "log.h"
 
+unsigned char rsv_frag[3] = {0x00, 0x00, 0x00};
+
 void usage_client(const char *name)
 {
 	printf("Usage: %s [options]\n", name);
@@ -28,21 +30,97 @@ void usage_client(const char *name)
 	printf("\t-h,--help print this help\n");
 }
 
-/* read plain from local, encrypt and send to server */
+/* read text from local, encrypt and send to server */
 int client_do_local_read(int sockfd, struct link *ln)
 {
-	if (do_plain_read(sockfd, ln) == -1)
+	int ret, cmd;
+
+	if (do_text_read(sockfd, ln) == -2)
 		goto out;
 
-	if (encrypt(ln) == -1)
-		goto out;
+	if (!(ln->state & SOCKS5_AUTH_REQUEST_RECEIVED)) {
+		ln->state |= SOCKS5_AUTH_REQUEST_RECEIVED;
 
-	if (!(ln->state & LINK_IV_EXCHANGED)) {
-		add_iv(ln);
-		ln->state |= LINK_IV_EXCHANGED;
+		if (check_socks5_auth_header(sockfd, ln) == -1) {
+			if (create_socks5_auth_reply(sockfd, ln, 0) == -1)
+				goto out;
+		} else {
+			if (create_socks5_auth_reply(sockfd, ln, 1) == -1)
+				goto out;
+		}
+
+		ret = do_text_send(sockfd, ln);
+		if (ret == -2) {
+			goto out;
+		} else if (ret == -1) {
+			return 0;
+		} else {
+			ln->state |= SOCKS5_AUTH_REPLY_SENT;
+			return 0;
+		}
+	} else if (!(ln->state & SOCKS5_CMD_REQUEST_RECEIVED)) {
+		ln->state = SOCKS5_CMD_REQUEST_RECEIVED;
+
+		if (check_socks5_cmd_header(sockfd, ln) == -1) {
+			cmd = SOCKS5_CMD_REP_FAILED;
+			if (create_socks5_cmd_reply(sockfd, ln, cmd) == -1)
+				goto out;
+		} else {
+			if (connect_server(ln) == -1)
+				goto out;
+			cmd = SOCKS5_CMD_REP_SUCCEEDED;
+			if (create_socks5_cmd_reply(sockfd, ln, cmd) == -1)
+				goto out;
+		}
+
+		/* cmd reply to local */
+		ret = do_cipher_send(sockfd, ln);
+		if (ret == -2 || cmd == SOCKS5_CMD_REP_FAILED) {
+			goto out;
+		} else if (ret == -1) {
+			return 0;
+		} else {
+			ln->state |= SOCKS5_CMD_REPLY_SENT;
+		}
 	}
 
-	if (do_cipher_send(ln->server_sockfd, ln) == -1)
+	if (!(ln->state & SOCKS5_CMD_REPLY_SENT)) {
+		return 0;
+	}
+
+	if (!(ln->state & SS_UDP) && !(ln->state & SS_TCP_HEADER_SENT)) {
+		if (encrypt(sockfd, ln) == -1)
+			goto out;
+
+		if (add_iv(sockfd, ln) == -1)
+			goto out;
+
+		ret = do_cipher_send(ln->server_sockfd, ln);
+		if (ret == -2) {
+			goto out;
+		} else if (ret == -1) {
+			return 0;
+		} else {
+			ln->state |= SS_TCP_HEADER_SENT;
+			return 0;
+		}
+	}
+
+	/* remove udp header for shadowsocks protocol */
+	if (ln->state & SS_UDP) {
+		if (rm_data(sockfd, ln, "text", 3) == -1)
+			goto out;
+	}
+
+	if (encrypt(sockfd, ln) == -1)
+		goto out;
+
+	if (ln->state & SS_UDP) {
+		if (add_iv(sockfd, ln) == -1)
+			goto out;
+	}
+
+	if (do_cipher_send(ln->server_sockfd, ln) == -2)
 		goto out;
 
 	sock_debug(sockfd, "%s returned successfully", __func__);
@@ -56,13 +134,24 @@ out:
 /* read encrypt from server, decrypt and send to local */
 int client_do_server_read(int sockfd, struct link *ln)
 {
-	if (do_cipher_read(sockfd, ln) == -1)
+	if (do_cipher_read(sockfd, ln) == -2)
 		goto out;
 
-	if (decrypt(ln) == -1)
+	if (ln->state & SS_UDP) {
+		if (receive_iv(sockfd, ln) == -1)
+			goto out;
+	}
+
+	if (decrypt(sockfd, ln) == -1)
 		goto out;
 
-	if (do_plain_send(ln->local_sockfd, ln) == -1)
+	if (ln->state & SS_UDP) {
+		if (add_data(sockfd, ln, "text",
+			     rsv_frag, sizeof(rsv_frag)) == -1)
+			goto out;
+	}
+
+	if (do_text_send(ln->local_sockfd, ln) == -1)
 		goto out;
 
 	sock_debug(sockfd, "%s returned successfully", __func__);
@@ -76,41 +165,11 @@ out:
 int client_do_pollin(int sockfd, struct link *ln)
 {
 	if (sockfd == ln->local_sockfd) {
-		if (!(ln->state & LINK_SERVER))
-			sock_info(sockfd, "%s: connect() in progress",
-				  __func__);
-
-		if (ln->state & LINK_CIPHER_PENDING) {
-			sock_info(sockfd, "%s: stop due to cipher send pending",
-				  __func__);
-			goto out;
-		} else if (ln->state & LINK_PLAIN_PENDING) {
-			sock_info(sockfd, "%s: stop due to plain send pending",
-				  __func__);
-			goto out;
-		}
-
 		if (client_do_local_read(sockfd, ln) == -1)
 			goto clean;
 		else
 			goto out;
-	} else {
-		if (ln->state & LINK_PLAIN_PENDING) {
-			sock_info(sockfd, "%s: stop due to plain send pending",
-				  __func__);
-			goto out;
-		}
-
-		if (ln->state & LINK_CIPHER_PENDING) {
-			sock_info(sockfd, "%s: stop due to cipher send pending",
-				  __func__);
-			goto out;
-		} else if (ln->state & LINK_PLAIN_PENDING) {
-			sock_info(sockfd, "%s: stop due to plain send pending",
-				  __func__);
-			goto out;
-		}
-
+	} else if (sockfd == ln->server_sockfd) {
 		if (client_do_server_read(sockfd, ln) == -1)
 			goto clean;
 		else
@@ -128,43 +187,89 @@ clean:
 
 int client_do_pollout(int sockfd, struct link *ln)
 {
-	int optval;
+	int ret, optval;
 	int optlen = sizeof(optval);
 
 	/* write to local */
 	if (sockfd == ln->local_sockfd) {
-		if (do_plain_send(sockfd, ln) == -1)
+		if (ln->state & SOCKS5_AUTH_REQUEST_RECEIVED &&
+		    !(ln->state & SOCKS5_AUTH_REPLY_SENT)) {
+			ret = do_text_send(sockfd, ln);
+			if (ret == -2) {
+				goto clean;
+			} else if (ret == -1) {
+				goto out;
+			} else {
+				ln->state |= SOCKS5_AUTH_REPLY_SENT;
+				goto out;
+			}
+		}
+
+		if (ln->state & SOCKS5_CMD_REQUEST_RECEIVED &&
+		    !(ln->state & SOCKS5_CMD_REPLY_SENT)) {
+			ret = do_cipher_send(sockfd, ln);
+			if (ret == -2) {
+				goto clean;
+			} else if (ret == -1) {
+				goto out;
+			} else {
+				ln->state |= SOCKS5_CMD_REPLY_SENT;
+				goto out;
+			}
+		}
+
+		ret = do_text_send(sockfd, ln);
+		if (ret == -2) {
 			goto clean;
-		else
+		} else {
 			goto out;
-	} else {
+		}
+	} else if (sockfd == ln->server_sockfd) {
 		/* pending connect finished */
-		if (!(ln->state & LINK_SERVER)) {
+		if (!(ln->state & SERVER)) {
 			if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR,
 				       &optval, &optlen) == -1) {
-				perror("getsockopt");
+				sock_warn(sockfd, "%s: getsockopt() %s",
+					  __func__, strerror(errno));
 				goto clean;
 			}
 
 			if (optval == 0) {
 				sock_info(sockfd,
-					       "pending connect() finished");
-				ln->state |= LINK_SERVER;
+					  "%s: pending connect() finished",
+					  __func__);
+				ln->state |= SERVER;
 				poll_rm(sockfd, POLLOUT);
 				poll_add(sockfd, POLLIN);
 				goto out;
 			} else {
-				perror("pending connect() failed");
+				sock_warn(sockfd,
+					  "%s: pending connect() failed",
+					  __func__);
 				goto clean;
 			}
+		}
 
+		if (ln->state & SOCKS5_CMD_REPLY_SENT &&
+		    !(ln->state & SS_UDP) &&
+		    !(ln->state & SS_TCP_HEADER_SENT)) {
+			ret = do_cipher_send(ln->server_sockfd, ln);
+			if (ret == -2) {
+				goto clean;
+			} else if (ret == -1) {
+				return 0;
+			} else {
+				ln->state |= SS_TCP_HEADER_SENT;
+				return 0;
+			}
 		}
 
 		/* write to server */
-		if (do_cipher_send(sockfd, ln) == -1)
+		if (do_cipher_send(sockfd, ln) == -2) {
 			goto clean;
-		else
+		} else {
 			goto out;
+		}
 	}
 
 out:
@@ -242,11 +347,11 @@ int main(int argc, char **argv)
 	if (server && s_port) {
 		ret = getaddrinfo(server, s_port, NULL, &s_info);
 		if (ret != 0) {
-			printf("getaddrinfo error: %s\n", gai_strerror(ret));
+			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out_addrinfo;
 		}
 	} else {
-		printf("Either server addr or server port is not specified\n");
+		pr_warn("Either server addr or server port is not specified\n");
 		usage_client(argv[0]);
 		ret = -1;
 		goto out_addrinfo;
@@ -255,11 +360,11 @@ int main(int argc, char **argv)
 	if (local && l_port) {
 		ret = getaddrinfo(local, l_port, NULL, &l_info);
 		if (ret != 0) {
-			printf("getaddrinfo error: %s\n", gai_strerror(ret));
+			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out_addrinfo;
 		}
 	} else {
-		printf("Either local addr or local port is not specified\n");
+		pr_warn("Either local addr or local port is not specified\n");
 		usage_client(argv[0]);
 		ret = -1;
 		goto out_addrinfo;
@@ -276,7 +381,7 @@ int main(int argc, char **argv)
 	}
 
 	poll_init();
-	listenfd = do_listen(l_info);
+	listenfd = do_listen(l_info, "tcp");
 	clients[0].fd = listenfd;
 	clients[0].events = POLLIN;
 
@@ -303,18 +408,14 @@ int main(int argc, char **argv)
 			if (poll_set(sockfd, POLLIN) == -1)
 				close(sockfd);
 
-			ln = create_link(sockfd);
+			ln = create_link(sockfd, "tcp");
 			if (ln == NULL) {
 				sock_debug(sockfd, "create_link failed");
 				poll_del(sockfd);
 				close(sockfd);
 			}
 
-			if (connect_server(ln, s_info) == -1) {
-				poll_del(sockfd);
-				destroy_link(ln);
-				close(sockfd);
-			}
+			ln->server = s_info;
 		}
 
 		for (i = 1; i < nfds; i++) {
@@ -329,6 +430,9 @@ int main(int argc, char **argv)
 					close(sockfd);
 					continue;
 				}
+
+				if (ln->state & PENDING)
+					continue;
 
 				client_do_pollin(sockfd, ln);
 			}

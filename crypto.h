@@ -12,8 +12,9 @@ extern char method[MAX_METHOD_NAME_LEN];
 
 int crypto_init(char *key, char *method);
 void crypto_exit(void);
-void add_iv(struct link *ln);
-int encrypt(struct link *ln);
-int decrypt(struct link *ln);
+int add_iv(int sockfd, struct link *ln);
+int receive_iv(int sockfd, struct link *ln);
+int encrypt(int sockfd, struct link *ln);
+int decrypt(int sockfd, struct link *ln);
 
 #endif

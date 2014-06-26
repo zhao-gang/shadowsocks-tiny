@@ -24,91 +24,89 @@ void usage_server(const char *name)
 	printf("\t-h,--help print this help information\n");
 }
 
-/* read plain from remote, encrypt and send to local */
+/* read text from remote, encrypt and send to local */
 int server_do_remote_read(int sockfd, struct link *ln)
 {
-	if (do_plain_read(sockfd, ln) == -1)
+	if (do_text_read(sockfd, ln) == -2)
 		goto out;
 
-	if (encrypt(ln) == -1)
+	if (ln->state & SS_UDP) {
+		if (add_ss_header(sockfd, ln) == -1)
+			goto out;
+	}
+
+	if (encrypt(sockfd, ln) == -1)
 		goto out;
 
-	if (do_cipher_send(ln->local_sockfd, ln) == -1)
+	if (ln->state & SS_UDP) {
+		if (add_iv(sockfd, ln) == -1)
+			goto out;
+	}
+
+	if (do_cipher_send(ln->local_sockfd, ln) == -2)
 		goto out;
 
-	sock_info(sockfd, "%s returned successfully", __func__);
+	sock_info(sockfd, "%s succeeded", __func__);
 	return 0;
 
 out:
-	sock_info(sockfd, "%s returned prematurely", __func__);
+	sock_info(sockfd, "%s failed", __func__);
 	return -1;
 }
 
 /* read encrypt from local, decrypt and send to remote */
 int server_do_local_read(int sockfd, struct link *ln)
 {
-	if (do_cipher_read(sockfd, ln) == -1)
+	if (do_cipher_read(sockfd, ln) == -2)
 		goto out;
 
-	if (decrypt(ln) == -1)
-		goto out;
-
-	if (!(ln->state & LINK_SERVER)) {
-		/* xxx: test */
-		/* r_info = get_addr(ln); */
-		if (getaddrinfo("127.0.0.1", "7", NULL, &ln->server) != 0) {
-			pr_warn("getaddrinfo failed: %s\n",
-				gai_strerror(errno));
+	if (ln->state & SS_UDP) {
+		if (receive_iv(sockfd, ln) == -1)
 			goto out;
-		}
-
-		if (connect_server(ln, ln->server) == -1)
+	} else if (!(ln->state & SS_TCP_HEADER_RECEIVED)) {
+		if (receive_iv(sockfd, ln) == -1)
 			goto out;
 	}
 
-	if (do_plain_send(ln->server_sockfd, ln) == -1)
+	if (decrypt(sockfd, ln) == -1)
 		goto out;
 
-	sock_info(sockfd, "%s returned successfully", __func__);
+	if (ln->state & SS_UDP) {
+		memcpy(ln->udp_header, ln->text, ln->text_len);
+		ln->udp_header_len = ln->text_len;
+	}
+
+	if (ln->state & SS_UDP || !(ln->state & SS_TCP_HEADER_RECEIVED)) {
+		if (check_ss_header(sockfd, ln) == -1)
+			goto out;
+	}
+
+	if (connect_server(ln) == -1)
+		goto out;
+
+	if (do_text_send(ln->server_sockfd, ln) == -2)
+		goto out;
+
+	sock_info(sockfd, "%s succeeded", __func__);
 	return 0;
 
 out:
-	sock_info(sockfd, "%s returned prematurely", __func__);
+	sock_info(sockfd, "%s failed", __func__);
 	return -1;
 }
 
 int server_do_pollin(int sockfd, struct link *ln)
 {
 	if (sockfd == ln->local_sockfd) {
-		if (!(ln->state & LINK_SERVER))
+		if (!(ln->state & SERVER))
 			sock_info(sockfd, "%s: connect() in progress",
 				  __func__);
-
-		if (ln->state & LINK_CIPHER_PENDING) {
-			sock_info(sockfd, "%s: stop due to cipher send pending",
-				  __func__);
-			goto out;
-		} else if (ln->state & LINK_PLAIN_PENDING) {
-			sock_info(sockfd, "%s: stop due to plain send pending",
-				  __func__);
-			goto out;
-		}
 
 		if (server_do_local_read(sockfd, ln) == -1)
 			goto clean;
 		else
 			goto out;
 	} else {
-		if (ln->state & LINK_PLAIN_PENDING) {
-			sock_info(sockfd, "%s: stop due to plain send pending",
-				  __func__);
-			goto out;
-		} else if (ln->state & LINK_CIPHER_PENDING) {
-			sock_info(sockfd, "%s: stop due to cipher send pending",
-				  __func__);
-			goto out;
-		}
-
 		if (server_do_remote_read(sockfd, ln) == -1)
 			goto clean;
 		else
@@ -131,33 +129,37 @@ int server_do_pollout(int sockfd, struct link *ln)
 
 	/* write to local */
 	if (sockfd == ln->local_sockfd) {
-		if (do_cipher_send(sockfd, ln) == -1)
+		if (do_cipher_send(sockfd, ln) == -2)
 			goto clean;
 		else
 			goto out;
 	} else {
 		/* pending connect finished */
-		if (!(ln->state & LINK_SERVER)) {
+		if (!(ln->state & SERVER)) {
 			if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR,
 				       &optval, &optlen) == -1) {
-				perror("getsockopt");
+				sock_warn(sockfd, "%s: getsockopt() %s",
+					  __func__, strerror(errno));
 				return -1;
 			}
 
 			if (optval == 0) {
 				sock_info(sockfd,
-					       "pending connect() finished");
-				ln->state |= LINK_SERVER;
+					  "%s: pending connect() finished",
+					  __func__);
+				ln->state |= SERVER;
 				goto out;
 			} else {
-				perror("pending connect() failed");
+				sock_warn(sockfd,
+					  "%s: pending connect() failed",
+					  __func__);
 				goto clean;
 			}
 
 		}
 
 		/* write to server */
-		if (do_plain_send(sockfd, ln) == -1)
+		if (do_text_send(sockfd, ln) == -2)
 			goto clean;
 		else
 			goto out;
@@ -245,9 +247,12 @@ int main(int argc, char **argv)
 
 	poll_alloc();
 	poll_init();
-	listenfd = do_listen(l_info);
+	listenfd = do_listen(l_info, "tcp");
 	clients[0].fd = listenfd;
 	clients[0].events = POLLIN;
+	listenfd = do_listen(l_info, "udp");
+	clients[1].fd = listenfd;
+	clients[1].events = POLLIN;
 
 	while (1) {
 		pr_debug("start polling\n");
@@ -272,12 +277,28 @@ int main(int argc, char **argv)
 				close(sockfd);
 			}
 
-			ln = create_link(sockfd);
+			ln = create_link(sockfd, "tcp");
 			if (ln == NULL) {
 				poll_del(sockfd);
 				close(sockfd);
 			}
+		}
 
+		if (clients[1].revents & POLLIN) {
+			sockfd = accept(listenfd, NULL, NULL);
+			if (sockfd == -1)
+				pr_warn("accept error\n");
+
+			if (poll_set(sockfd, POLLIN) == -1) {
+				sock_warn(sockfd, "add to poll failed");
+				close(sockfd);
+			}
+
+			ln = create_link(sockfd, "udp");
+			if (ln == NULL) {
+				poll_del(sockfd);
+				close(sockfd);
+			}
 		}
 
 		for (i = 1; i < nfds; i++) {
@@ -292,6 +313,9 @@ int main(int argc, char **argv)
 					close(sockfd);
 					continue;
 				}
+
+				if (ln->state & PENDING)
+					continue;
 
 				server_do_pollin(sockfd, ln);
 			}

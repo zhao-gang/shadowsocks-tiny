@@ -122,21 +122,15 @@ void pr_ai_warn(struct addrinfo *info, const char *fmt, ...)
 	va_end(ap);
 }
 
-char *sock_addr(int sockfd, char *str)
+int sock_addr(int sockfd, char *str)
 {
 	void *addrptr;
 	struct sockaddr_storage ss_addr;
 	int len = sizeof(struct sockaddr_storage);
 
-	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
-			&len) == -1) {
-		if (errno != ENOTCONN)
-			goto err;
-
-		if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
-				&len) == -1)
-			goto err;
-	}
+	if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
+			&len) == -1)
+		goto err;
 
 	if (ss_addr.ss_family == AF_INET)
 		addrptr = &((struct sockaddr_in *)&ss_addr)->sin_addr;
@@ -147,11 +141,48 @@ char *sock_addr(int sockfd, char *str)
 		      INET6_ADDRSTRLEN) == NULL)
 		goto err;
 
-	return str;
+	return 0;
 
 err:
-	perror("_sock_addr");
-	return NULL;
+	perror("sock_addr");
+	return -1;
+}
+
+int sock_peer_addr(int sockfd, char *str)
+{
+	void *addrptr;
+	struct sockaddr_storage ss_addr;
+	int len = sizeof(struct sockaddr_storage);
+
+	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
+			&len) == -1)
+		goto err;
+
+	if (ss_addr.ss_family == AF_INET)
+		addrptr = &((struct sockaddr_in *)&ss_addr)->sin_addr;
+	else
+		addrptr = &((struct sockaddr_in6 *)&ss_addr)->sin6_addr;
+
+	if (inet_ntop(ss_addr.ss_family, addrptr, str,
+		      INET6_ADDRSTRLEN) == NULL)
+		goto err;
+
+	return 0;
+
+err:
+	perror("sock_peer_addr");
+	return -1;
+}
+
+static int _sock_addr(int sockfd, char *str)
+{
+	int ret;
+
+	ret = sock_peer_addr(sockfd, str);
+	if (ret == 0)
+		return 0;
+	else
+		return sock_addr(sockfd, str);
 }
 
 unsigned short sock_port(int sockfd)
@@ -159,15 +190,9 @@ unsigned short sock_port(int sockfd)
 	struct sockaddr_storage ss_addr;
 	int len = sizeof(struct sockaddr_storage);
 
-	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
-			&len) == -1) {
-		if (errno != ENOTCONN)
-			goto err;
-
-		if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
-				&len) == -1)
-			goto err;
-	}
+	if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
+			&len) == -1)
+		goto err;
 
 	if (ss_addr.ss_family == AF_INET)
 		return ntohs(((struct sockaddr_in *)&ss_addr)->sin_port);
@@ -175,8 +200,38 @@ unsigned short sock_port(int sockfd)
 		return ntohs(((struct sockaddr_in6 *)&ss_addr)->sin6_port);
 
 err:
-	perror("_sock_port");
+	perror("sock_port");
 	return -1;
+}
+
+unsigned short sock_peer_port(int sockfd)
+{
+	struct sockaddr_storage ss_addr;
+	int len = sizeof(struct sockaddr_storage);
+
+	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
+			&len) == -1)
+		goto err;
+
+	if (ss_addr.ss_family == AF_INET)
+		return ntohs(((struct sockaddr_in *)&ss_addr)->sin_port);
+	else
+		return ntohs(((struct sockaddr_in6 *)&ss_addr)->sin6_port);
+
+err:
+	perror("sock_peer_port");
+	return -1;
+}
+
+static unsigned short _sock_port(int sockfd)
+{
+	unsigned short port;
+
+	port = sock_peer_port(sockfd);
+	if (port != -1)
+		return port;
+	else
+		return sock_port(sockfd);
 }
 
 static void sock_print(int sockfd, char *level, const char *fmt, va_list ap)
@@ -185,13 +240,13 @@ static void sock_print(int sockfd, char *level, const char *fmt, va_list ap)
 
 	printf("%s: ", level);
 	vprintf(fmt, ap);
-	printf(" %s:%d\n", sock_addr(sockfd, str), sock_port(sockfd));
+	printf(" (%s:%d)\n", _sock_addr(sockfd, str),
+	       _sock_port(sockfd));
 }
 
 void sock_debug(int sockfd, const char *fmt, ...)
 {
 	va_list ap;
-	char str[INET6_ADDRSTRLEN];
 
 	if (!debug)
 		return;
@@ -216,7 +271,6 @@ void sock_info(int sockfd, const char *fmt, ...)
 void sock_warn(int sockfd, const char *fmt, ...)
 {
 	va_list ap;
-	char str[INET6_ADDRSTRLEN];
 
 	va_start(ap, fmt);
 	sock_print(sockfd, "WARNING", fmt, ap);

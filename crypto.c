@@ -57,45 +57,39 @@ void crypto_exit(void)
 	ERR_free_strings();
 }
 
-void add_iv(struct link *ln)
+int add_iv(int sockfd, struct link *ln)
 {
-	int i, iv_len, cipher_len;
+	int ret;
+	int iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
 
-	iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
-	cipher_len = ln->cipher_len;
+	ret = add_data(sockfd, ln, "cipher", ln->iv, iv_len);
+	if (ret != 0) {
+		sock_warn(sockfd, "%s failed", __func__);
+	} else {
+		sock_info(sockfd, "%s succeeded", __func__);
+		pr_iv(ln);
+	}
 
-	for (i = cipher_len - 1; i >= 0; i--)
-		ln->cipher[i + iv_len] = ln->cipher[i];
-
-	for (i = 0; i < iv_len; i++)
-		ln->cipher[i] = ln->iv[i];
-
-	ln->cipher_len += iv_len;
-
-	pr_link_info(ln);
-	pr_info("added iv:\n");
-	pr_iv(ln);
+	return ret;
 }
 
 /* iv is in the first iv_len byptes of received buf */
-void receive_iv(struct link *ln, int iv_len)
+int receive_iv(int sockfd, struct link *ln)
 {
-	int i;
+	int ret;
+	int iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
 
-	for (i = 0; i < iv_len; i++)
-		ln->iv[i] = ln->cipher[i];
-
+	memcpy(ln->iv, ln->cipher, iv_len);
 	ln->iv[iv_len] = '\0';
+	ret = rm_data(sockfd, ln, "cipher", iv_len);
+	if (ret != 0) {
+		sock_warn(sockfd, "%s failed", __func__);
+	} else {
+		sock_info(sockfd, "%s succeeded", __func__);
+		pr_iv(ln);
+	}
 
-	/* exclude iv from buf */
-	for (i = iv_len; i < CIPHER_BUF_SIZE; i++)
-		ln->cipher[i - iv_len] = ln->cipher[i];
-
-	ln->cipher_len -= iv_len;
-
-	pr_link_info(ln);
-	pr_info("received iv:\n");
-	pr_iv(ln);
+	return ret;
 }
 
 int create_cipher(struct link *ln, bool iv)
@@ -114,13 +108,12 @@ int create_cipher(struct link *ln, bool iv)
 	key_len = EVP_CIPHER_key_length(ln->evp_cipher);
 	iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
 
-	if (iv)
-		receive_iv(ln, iv_len);
-	else
+	if (!iv) {
 		if (RAND_bytes(ln->iv, iv_len) == -1)
 			goto err;
 
-	ln->iv[iv_len] = '\0';
+		ln->iv[iv_len] = '\0';
+	}
 
 	if (EVP_BytesToKey(ln->evp_cipher, md, NULL, passwd, strlen(passwd), 1,
 			   ln->key, ln->iv) == 0)
@@ -144,7 +137,7 @@ err:
 	return -1;
 }
 
-int encrypt(struct link *ln)
+int encrypt(int sockfd, struct link *ln)
 {
 	int len, cipher_len;
 
@@ -171,28 +164,23 @@ int encrypt(struct link *ln)
 	pr_link_debug(ln);
 	pr_text(ln);
 	pr_cipher(ln);
-	pr_debug("%s succeeded\n", __func__);
+	sock_info(sockfd, "%s succeeded", __func__);
 	return cipher_len;
 
 err:
 	ERR_print_errors_fp(stderr);
 	pr_link_info(ln);
-	pr_warn("%s failed\n", __func__);
+	sock_warn(sockfd, "%s failed", __func__);
 	return -1;
 }
 
-int decrypt(struct link *ln)
+int decrypt(int sockfd, struct link *ln)
 {
 	int len, text_len;
-	/* cipher_len is the buf length excluding iv(if exist) */
-	int cipher_len;
 
-	if (!(ln->state & LINK_IV_EXCHANGED)) {
+	if (ln->evp_cipher == NULL)
 		if (create_cipher(ln, true) == -1)
 			goto err;
-
-		ln->state |= LINK_IV_EXCHANGED;
-	}
 
 	if (EVP_DecryptInit_ex(ln->ctx, ln->evp_cipher, NULL,
 			       ln->key, ln->iv) != 1) {
@@ -208,7 +196,6 @@ int decrypt(struct link *ln)
 		goto err;
 	}
 
-
 	text_len = len;
 
 	if (EVP_DecryptFinal_ex(ln->ctx, ln->cipher + len, &len) != 1) {
@@ -223,12 +210,12 @@ int decrypt(struct link *ln)
 	pr_link_info(ln);
 	pr_cipher(ln);
 	pr_text(ln);
-	pr_info("%s succeeded\n", __func__);
+	sock_info(sockfd, "%s succeeded", __func__);
 	return text_len;
 
 err:
 	ERR_print_errors_fp(stderr);
 	pr_link_warn(ln);
-	pr_warn("%s failed\n", __func__);
+	sock_warn(sockfd, "%s failed\n", __func__);
 	return -1;
 }
