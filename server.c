@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -54,16 +55,15 @@ out:
 	return -1;
 }
 
-/* read encrypt from local, decrypt and send to remote */
+/* read encrypt from local, decrypt */
 int server_do_local_read(int sockfd, struct link *ln)
 {
-	if (do_cipher_read(sockfd, ln) == -2)
+	if (do_cipher_read(sockfd, ln) == -2) {
 		goto out;
+	}
 
-	if (ln->state & SS_UDP) {
-		if (receive_iv(sockfd, ln) == -1)
-			goto out;
-	} else if (!(ln->state & SS_TCP_HEADER_RECEIVED)) {
+	if (ln->state & SS_UDP ||
+	    !(ln->state & SS_TCP_HEADER_RECEIVED)) {
 		if (receive_iv(sockfd, ln) == -1)
 			goto out;
 	}
@@ -72,17 +72,14 @@ int server_do_local_read(int sockfd, struct link *ln)
 		goto out;
 
 	if (ln->state & SS_UDP) {
-		memcpy(ln->udp_header, ln->text, ln->text_len);
-		ln->udp_header_len = ln->text_len;
-	}
-
-	if (ln->state & SS_UDP || !(ln->state & SS_TCP_HEADER_RECEIVED)) {
 		if (check_ss_header(sockfd, ln) == -1)
 			goto out;
-	}
+	} else if (!(ln->state & SS_TCP_HEADER_RECEIVED)) {
+		if (check_ss_header(sockfd, ln) == -1)
+			goto out;
 
-	if (connect_server(ln) == -1)
-		goto out;
+		ln->state |= SS_TCP_HEADER_RECEIVED;
+	}
 
 	if (do_text_send(ln->server_sockfd, ln) == -2)
 		goto out;
@@ -102,19 +99,32 @@ int server_do_pollin(int sockfd, struct link *ln)
 			sock_info(sockfd, "%s: connect() in progress",
 				  __func__);
 
-		if (server_do_local_read(sockfd, ln) == -1)
-			goto clean;
-		else
+		if (ln->state & PENDING) {
+			sock_info(sockfd, "%s: pending when pollin",
+				  __func__);
 			goto out;
+		} else if (server_do_local_read(sockfd, ln) == -1) {
+			goto clean;
+		} else {
+			goto out;
+		}
 	} else {
-		if (server_do_remote_read(sockfd, ln) == -1)
-			goto clean;
-		else
+		/* if (ln->state & WAITING) { */
+		/* 	sock_info(sockfd, "%s: waiting for local data", */
+		/* 		  __func__); */
+		/* 	goto out; */
+		if (ln->state & PENDING) {
+			sock_info(sockfd, "%s: pending when pollin",
+				  __func__);
 			goto out;
+		} else if (server_do_remote_read(sockfd, ln) == -1) {
+			goto clean;
+		} else {
+			goto out;
+		}
 	}
 
 out:
-	sock_debug(sockfd, "%s succeeded", __func__);
 	return 0;
 clean:
 	sock_info(sockfd, "%s: closed", __func__);
@@ -129,15 +139,19 @@ int server_do_pollout(int sockfd, struct link *ln)
 
 	/* write to local */
 	if (sockfd == ln->local_sockfd) {
-		if (do_cipher_send(sockfd, ln) == -2)
-			goto clean;
-		else
-			goto out;
+		if (ln->state & CIPHER_PENDING) {
+			if (do_cipher_send(sockfd, ln) == -2)
+				goto clean;
+			else
+				goto out;
+		} else {
+			poll_rm(sockfd, POLLOUT);
+		}
 	} else {
 		/* pending connect finished */
 		if (!(ln->state & SERVER)) {
 			if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR,
-				       &optval, &optlen) == -1) {
+				       &optval, (void *)&optlen) == -1) {
 				sock_warn(sockfd, "%s: getsockopt() %s",
 					  __func__, strerror(errno));
 				return -1;
@@ -148,25 +162,27 @@ int server_do_pollout(int sockfd, struct link *ln)
 					  "%s: pending connect() finished",
 					  __func__);
 				ln->state |= SERVER;
-				goto out;
 			} else {
 				sock_warn(sockfd,
 					  "%s: pending connect() failed",
 					  __func__);
 				goto clean;
 			}
-
 		}
 
-		/* write to server */
-		if (do_text_send(sockfd, ln) == -2)
-			goto clean;
-		else
-			goto out;
+		if (ln->state & TEXT_PENDING) {
+			/* write to remote */
+			if (do_text_send(sockfd, ln) == -2) {
+				goto clean;
+			} else {
+				goto out;
+			}
+		} else {
+			poll_rm(sockfd, POLLOUT);
+		}
 	}
 
 out:
-	sock_debug(sockfd, "%s succeeded", __func__);
 	return 0;
 clean:
 	sock_info(sockfd, "%s: closed", __func__);
@@ -233,6 +249,7 @@ int main(int argc, char **argv)
 			printf("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out_addrinfo;
 		}
+		pr_ai_debug(l_info, "server listening address:");
 	} else {
 		printf("Either local addr or local port is not specified\n");
 		usage_server(argv[0]);
@@ -245,7 +262,6 @@ int main(int argc, char **argv)
 		goto out_addrinfo;
 	}
 
-	poll_alloc();
 	poll_init();
 	listenfd = do_listen(l_info, "tcp");
 	clients[0].fd = listenfd;
@@ -259,6 +275,7 @@ int main(int argc, char **argv)
 		ret = poll(clients, nfds, -1);
 		if (ret == -1)
 			err_exit("poll error");
+		pr_debug("poll returned %d\n", ret);
 
 		/* can't happen, because we have set timeout to
 		 * infinite, but as a paranoid... */
@@ -267,73 +284,62 @@ int main(int argc, char **argv)
 			continue;
 		}
 
-		if (clients[0].revents & POLLIN) {
-			sockfd = accept(listenfd, NULL, NULL);
-			if (sockfd == -1)
-				pr_warn("accept error\n");
 
-			if (poll_set(sockfd, POLLIN) == -1) {
+		if (clients[0].revents & POLLIN) {
+			sockfd = accept(clients[0].fd, NULL, NULL);
+			if (sockfd == -1) {
+				pr_warn("accept error\n");
+			} else if (poll_set(sockfd, POLLIN) == -1) {
 				sock_warn(sockfd, "add to poll failed");
 				close(sockfd);
-			}
-
-			ln = create_link(sockfd, "tcp");
-			if (ln == NULL) {
-				poll_del(sockfd);
-				close(sockfd);
+			} else {
+				ln = create_link(sockfd);
+				if (ln == NULL) {
+					poll_del(sockfd);
+					close(sockfd);
+				}
 			}
 		}
 
 		if (clients[1].revents & POLLIN) {
-			sockfd = accept(listenfd, NULL, NULL);
-			if (sockfd == -1)
-				pr_warn("accept error\n");
-
-			if (poll_set(sockfd, POLLIN) == -1) {
-				sock_warn(sockfd, "add to poll failed");
-				close(sockfd);
-			}
-
-			ln = create_link(sockfd, "udp");
-			if (ln == NULL) {
-				poll_del(sockfd);
-				close(sockfd);
-			}
+			ln = create_link(sockfd);
+			if (ln != NULL) {
+				check_ss_header(sockfd, ln);
+			}				
 		}
 
-		for (i = 1; i < nfds; i++) {
+		for (i = 2; i < nfds; i++) {
 			sockfd = clients[i].fd;
 			if (sockfd == -1)
 				continue;
 
 			if (clients[i].revents & POLLIN) {
+				sock_debug(sockfd, "POLLIN");
 				ln = get_link(sockfd);
 				if (ln == NULL) {
 					sock_warn(sockfd, "pollin: no link");
 					close(sockfd);
-					continue;
+				} else if (!(ln->state & PENDING)) {
+					server_do_pollin(sockfd, ln);
+				} else {
+					sock_warn(sockfd, "PENDING when pollin");
+					pr_link_debug(ln);
 				}
-
-				if (ln->state & PENDING)
-					continue;
-
-				server_do_pollin(sockfd, ln);
 			}
 
 			if (clients[i].revents & POLLOUT) {
+				sock_debug(sockfd, "POLLOUT");
 				ln = get_link(sockfd);
 				if (ln == NULL) {
 					sock_warn(sockfd, "pollout: no link");
 					close(sockfd);
-					continue;
+				} else {
+					server_do_pollout(sockfd, ln);
 				}
-
-				server_do_pollout(sockfd, ln);
 			}
 		}
 	}
 
-out_crypto:
 	crypto_exit();
 out_addrinfo:
 	if (s_info)

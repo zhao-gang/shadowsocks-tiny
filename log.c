@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <string.h>
 #include <errno.h>
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -11,11 +12,6 @@
 
 bool debug;
 bool verbose;
-
-static void no_printf(const char *fmt, ...)
-{
-	/* return; */
-}
 
 void pr_fun(const char *level, const char *fmt, va_list ap)
 {
@@ -55,22 +51,33 @@ static int _pr_addrinfo(const char *level, struct addrinfo *info,
 	char addr[INET6_ADDRSTRLEN];
 	unsigned short port;
 
-	if (ai->ai_family == AF_INET) {
-		addrptr = &((struct sockaddr_in *)ai->ai_addr)->sin_addr;
-		port = ntohs(((struct sockaddr_in *)ai->ai_addr)->sin_port);
-	} else {
-		addrptr = &((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr;
-		port = ntohs(((struct sockaddr_in6 *)ai->ai_addr)->sin6_port);
-	}
-
-	if (inet_ntop(ai->ai_family, addrptr, addr,
-		      INET6_ADDRSTRLEN) == NULL) {
-		return errno;
-	}
-
 	printf("%s: ", level);
 	vprintf(fmt, ap);
-	printf("%s:%d\n", addr, port);
+	printf(":");
+
+	while (ai) {
+		if (ai->ai_family == AF_INET) {
+			addrptr = &((struct sockaddr_in *)ai->ai_addr)->sin_addr;
+			port = ntohs(((struct sockaddr_in *)ai->ai_addr)->sin_port);
+		} else {
+			addrptr = &((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr;
+			port = ntohs(((struct sockaddr_in6 *)ai->ai_addr)->sin6_port);
+		}
+
+		if (inet_ntop(ai->ai_family, addrptr, addr,
+			      INET6_ADDRSTRLEN) == NULL) {
+			return errno;
+		}
+
+		if (ai->ai_socktype == SOCK_STREAM)
+			printf(" %s:%d(tcp)", addr, port);
+		else if (ai->ai_socktype == SOCK_DGRAM)
+			printf(" %s:%d(udp)", addr, port);
+		ai = ai->ai_next;
+	}
+
+	printf("\n");
+
 	return 0;
 }
 
@@ -129,7 +136,7 @@ int sock_addr(int sockfd, char *str)
 	int len = sizeof(struct sockaddr_storage);
 
 	if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
-			&len) == -1)
+			(void *)&len) == -1)
 		goto err;
 
 	if (ss_addr.ss_family == AF_INET)
@@ -148,14 +155,14 @@ err:
 	return -1;
 }
 
-int sock_peer_addr(int sockfd, char *str)
+static int _sock_peer_addr(int sockfd, char *str)
 {
 	void *addrptr;
 	struct sockaddr_storage ss_addr;
 	int len = sizeof(struct sockaddr_storage);
 
 	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
-			&len) == -1)
+			(void *)&len) == -1)
 		goto err;
 
 	if (ss_addr.ss_family == AF_INET)
@@ -170,7 +177,6 @@ int sock_peer_addr(int sockfd, char *str)
 	return 0;
 
 err:
-	perror("sock_peer_addr");
 	return -1;
 }
 
@@ -178,20 +184,20 @@ static int _sock_addr(int sockfd, char *str)
 {
 	int ret;
 
-	ret = sock_peer_addr(sockfd, str);
+	ret = _sock_peer_addr(sockfd, str);
 	if (ret == 0)
 		return 0;
 	else
 		return sock_addr(sockfd, str);
 }
 
-unsigned short sock_port(int sockfd)
+int sock_port(int sockfd)
 {
 	struct sockaddr_storage ss_addr;
 	int len = sizeof(struct sockaddr_storage);
 
 	if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
-			&len) == -1)
+			(void *)&len) == -1)
 		goto err;
 
 	if (ss_addr.ss_family == AF_INET)
@@ -204,13 +210,13 @@ err:
 	return -1;
 }
 
-unsigned short sock_peer_port(int sockfd)
+static int _sock_peer_port(int sockfd)
 {
 	struct sockaddr_storage ss_addr;
 	int len = sizeof(struct sockaddr_storage);
 
 	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
-			&len) == -1)
+			(void *)&len) == -1)
 		goto err;
 
 	if (ss_addr.ss_family == AF_INET)
@@ -219,15 +225,14 @@ unsigned short sock_peer_port(int sockfd)
 		return ntohs(((struct sockaddr_in6 *)&ss_addr)->sin6_port);
 
 err:
-	perror("sock_peer_port");
 	return -1;
 }
 
-static unsigned short _sock_port(int sockfd)
+static int _sock_port(int sockfd)
 {
-	unsigned short port;
+	int port;
 
-	port = sock_peer_port(sockfd);
+	port = _sock_peer_port(sockfd);
 	if (port != -1)
 		return port;
 	else
@@ -238,10 +243,10 @@ static void sock_print(int sockfd, char *level, const char *fmt, va_list ap)
 {
 	char str[INET6_ADDRSTRLEN];
 
+	_sock_addr(sockfd, str);
 	printf("%s: ", level);
 	vprintf(fmt, ap);
-	printf(" (%s:%d)\n", _sock_addr(sockfd, str),
-	       _sock_port(sockfd));
+	printf(" (%s:%d)\n", str, _sock_port(sockfd));
 }
 
 void sock_debug(int sockfd, const char *fmt, ...)

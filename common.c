@@ -4,9 +4,9 @@
 #include <string.h>
 #include <errno.h>
 #include <netdb.h>
+#include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
-#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -14,7 +14,7 @@
 #include "common.h"
 
 struct pollfd *clients;
-int nfds;
+int nfds = MAX_CONNECTION;
 struct link *link_head;
 
 void _pr_link(const char *level, struct link *ln)
@@ -38,7 +38,11 @@ void _pr_link(const char *level, struct link *ln)
 	if (state & CIPHER_PENDING)
 		strcat(state_str, ", cipher pending");
 
-	if (state & SOCKS5_CMD_REPLY_SENT)
+	if (state & SS_TCP_HEADER_SENT)
+		strcat(state_str, ", ss tcp header sent");
+	else if (state & SS_TCP_HEADER_RECEIVED)
+		strcat(state_str, ", ss tcp header received");
+	else if (state & SOCKS5_CMD_REPLY_SENT)
 		strcat(state_str, ", socks5 cmd reply sent");
 	else if (state & SOCKS5_CMD_REQUEST_RECEIVED)
 		strcat(state_str, ", socks5 cmd request received");
@@ -46,11 +50,6 @@ void _pr_link(const char *level, struct link *ln)
 		strcat(state_str, ", socks5 auth reply sent");
 	else if (state & SOCKS5_AUTH_REQUEST_RECEIVED)
 		strcat(state_str, ", socks5 auth request received");
-
-	if (state = SS_TCP_HEADER_SENT)
-		strcat(state_str, ", ss tcp header sent");
-	else if (state = SS_TCP_HEADER_RECEIVED)
-		strcat(state_str, ", ss tcp header received");
 
 	printf("%s: state: %s; local sockfd: %d; server sockfd: %d; "
 	       "text len: %d; cipher len: %d;\n",
@@ -89,22 +88,30 @@ static void pr_data(struct link *ln, const char *type)
 
 	if (strcmp(type, "iv") == 0) {
 		len = EVP_CIPHER_iv_length(ln->evp_cipher);
-		data = ln->iv;
+		data = (void *)ln->iv;
 	} else if (strcmp(type, "key") == 0) {
 		len = EVP_CIPHER_key_length(ln->evp_cipher);
-		data = ln->key;
+		data = (void *)ln->key;
 	} else if (strcmp(type, "text") == 0) {
 		len = ln->text_len;
-		data = ln->text;
+		data = (void *)ln->text;
 	} else if (strcmp(type, "cipher") == 0) {
 		len = ln->cipher_len;
-		data = ln->cipher;
+		data = (void *)ln->cipher;
 	} else {
 		pr_warn("%s: unknown type: %s\n", __func__, type);
 		return;
 	}
 
 	printf("%s:\n", type);
+
+	/* if (strcmp(type, "text") == 0) { */
+	/* 	for (i = 0; i < len; i++) */
+	/* 		printf("%c", (char)data[i]); */
+
+	/* 	printf("\n"); */
+	/* 	return; */
+	/* } */
 
 	for (i = 0; i < len - 1; i++) {
 		if (i % 10 == 9)
@@ -136,54 +143,33 @@ void pr_cipher(struct link *ln)
 	pr_data(ln, "cipher");
 }
 
-static int get_max_clients(void)
+void poll_init(void)
 {
-	struct rlimit lmt;
-
-	if (getrlimit(RLIMIT_NOFILE, &lmt) == -1) {
-		perror("getrlimit");
-		return -1;
-	} else
-		return lmt.rlim_cur;
-}
-
-struct pollfd *poll_alloc(void)
-{
-	nfds = get_max_clients();
-	if (nfds == -1)
-		nfds = DEFAULT_MAX_CONNECTION;
+	int i;
 
 	clients = calloc(nfds, sizeof(struct pollfd));
 	if (clients == NULL)
 		pr_exit("%s: calloc failed", __func__);
 
-	pr_info("%s succeeded nfds = %d\n", __func__, nfds);
-	return clients;
-}
-
-void poll_init(void)
-{
-	int i;
-
 	for (i = 0; i < nfds; i++)
 		clients[i].fd = -1;
-
-	pr_info("poll: initialized\n");
 }
 
 void poll_events_string(short events, char *events_str)
 {
-	if (events & POLLIN)
+	if (events & POLLIN) {
 		if (strlen(events_str) == 0)
 			strcat(events_str, "POLLIN");
 		else
 			strcat(events_str, " POLLIN");
+	}
 
-	if (events & POLLOUT)
+	if (events & POLLOUT) {
 		if (strlen(events_str) == 0)
 			strcat(events_str, "POLLOUT");
 		else
 			strcat(events_str, " POLLOUT");
+	}
 }
 
 int poll_set(int sockfd, short events)
@@ -196,9 +182,9 @@ int poll_set(int sockfd, short events)
 	/* i == 0 is listen sockfd, it's not needed to be checked by now */
 	for (i = 1; i < nfds; i++) {
 		if (clients[i].fd == sockfd) {
-			sock_warn(sockfd, "%s: already in poll(%s)",
-				  __func__, events_str);
 			clients[i].events = events;
+			sock_debug(sockfd, "%s: events(%s)",
+				   __func__, events_str);
 			return 0;
 		}
 	}
@@ -280,7 +266,7 @@ int poll_del(int sockfd)
 	return -1;
 }
 
-struct link *create_link(int sockfd, const char *type)
+struct link *create_link(int sockfd)
 {
 	struct link *ln;
 	struct link *head = link_head;
@@ -289,33 +275,14 @@ struct link *create_link(int sockfd, const char *type)
 	if (ln == NULL)
 		goto err;
 
-	if (strcmp(type, "tcp") == 0) {
-		ln->text = malloc(TCP_TEXT_BUF_SIZE);
-		if (ln->text == NULL)
-			goto err;
+	ln->text = malloc(TEXT_BUF_SIZE);
+	if (ln->text == NULL)
+		goto err;
 
-		ln->cipher = malloc(TCP_CIPHER_BUF_SIZE);
-		if (ln->cipher == NULL)
-			goto err;
-	} else if (strcmp(type, "udp") == 0) {
-		ln->text = malloc(UDP_TEXT_BUF_SIZE);
-		if (ln->text == NULL)
-			goto err;
-
-		ln->cipher = malloc(UDP_CIPHER_BUF_SIZE);
-		if (ln->cipher == NULL)
-			goto err;
-
-		ln->udp_header = malloc(UDP_HEADER_SIZE);
-		if (ln->udp_header == NULL)
-			goto err;
-
-		ln->state |= SS_UDP;
-	} else {
-		sock_warn(sockfd, "%s: unknown type %s",
-			  __func__, type);
-		return NULL;
-	}
+	ln->ss_header = ln->text;
+	ln->cipher = malloc(CIPHER_BUF_SIZE);
+	if (ln->cipher == NULL)
+		goto err;
 
 	ln->state |= LOCAL;
 	ln->local_sockfd = sockfd;
@@ -329,21 +296,20 @@ struct link *create_link(int sockfd, const char *type)
 		link_head = ln;
 	}
 
-	sock_info(sockfd, "%s(%s): added to link",
-		  __func__, type);
+	sock_info(sockfd, "%s: added to link", __func__);
 	return ln;
 
 err:
-	if (ln->text)
-		free(ln->text);
+	if (ln->ss_header)
+		free(ln->ss_header);
+
 	if (ln->cipher)
 		free(ln->cipher);
-	if (ln->udp_header)
-		free(ln->udp_header);
+
 	if (ln)
 		free(ln);
-	sock_warn(sockfd, "%s(%s): can't allocate memory for link",
-		  __func__, type);
+
+	sock_warn(sockfd, "%s: can't allocate memory for link",  __func__);
 	return NULL;
 }
 
@@ -354,8 +320,6 @@ struct link *get_link(int sockfd)
 	while (head) {
 		if (head->local_sockfd == sockfd ||
 		    head->server_sockfd == sockfd) {
-			pr_link_debug(head);
-			sock_debug(sockfd, "%s: succeeded", __func__);
 			return head;
 		} else {
 			head = head->next;
@@ -398,8 +362,6 @@ static int unlink_link(struct link *ln)
 	return -1;
 
 out:
-	pr_link_debug(ln);
-	pr_debug("%s succeeded\n", __func__);
 	return 0;
 }
 
@@ -408,19 +370,14 @@ static void free_link(struct link *ln)
 	if (ln->ctx)
 		EVP_CIPHER_CTX_free(ln->ctx);
 
-	if (ln->text)
-		free(ln->text);
+	if (ln->ss_header)
+		free(ln->ss_header);
 
 	if (ln->cipher)
 		free(ln->cipher);
 
-	if (ln->udp_header)
-		free(ln->udp_header);
-
 	if (ln)
 		free(ln);
-
-	pr_debug("%s: succeeded\n", __func__);
 }
 
 void destroy_link(struct link *ln)
@@ -437,6 +394,7 @@ void destroy_link(struct link *ln)
 	free_link(ln);
 }
 
+/* for udp, we just bind it, since udp can't listen */
 int do_listen(struct addrinfo *info, const char *type_str)
 {
 	int sockfd, type;
@@ -459,8 +417,9 @@ int do_listen(struct addrinfo *info, const char *type_str)
 			if (bind(sockfd, lp->ai_addr, lp->ai_addrlen) == -1)
 				goto err;
 
-			if (listen(sockfd, SOMAXCONN) == -1)
-				goto err;
+			if (type & SOCK_STREAM)
+				if (listen(sockfd, SOMAXCONN) == -1)
+					goto err;
 
 			return sockfd;
 		}
@@ -477,10 +436,17 @@ int connect_server(struct link *ln)
 	int sockfd, type, ret;
 	struct addrinfo *sp = ln->server;
 
+	if (ln->server_sockfd != -1) {
+		pr_warn("%s is called twice on link, "
+			"return without doing anything\n",
+			__func__);
+		return 0;
+	}
+
 	if (ln->state & SS_UDP)
-		type == SOCK_DGRAM;
+		type = SOCK_DGRAM;
 	else
-		type == SOCK_STREAM;
+		type = SOCK_STREAM;
 
 	while (sp) {
 		if (sp->ai_socktype == type) {
@@ -505,7 +471,7 @@ int connect_server(struct link *ln)
 
 			/* sucessfully connected */
 			ln->state |= SERVER;
-			poll_add(sockfd, POLLIN);
+			poll_set(sockfd, POLLIN);
 			sock_info(sockfd, "%s: connected", __func__);
 			return 0;
 		}
@@ -521,15 +487,15 @@ err:
 int add_data(int sockfd, struct link *ln,
 	     const char *type, char *data, int size)
 {
-	unsigned char *buf;
-	int i, len, max_text_size, max_cipher_size;
+	char *buf;
+	int len, max_text_size, max_cipher_size;
 
 	if (ln->state & SS_UDP) {
-		max_text_size = UDP_TEXT_BUF_SIZE;
-		max_cipher_size = UDP_CIPHER_BUF_SIZE;
+		max_text_size = TEXT_BUF_SIZE;
+		max_cipher_size = CIPHER_BUF_SIZE;
 	} else {
-		max_text_size = TCP_TEXT_BUF_SIZE;
-		max_cipher_size = TCP_CIPHER_BUF_SIZE;
+		max_text_size = TEXT_BUF_SIZE;
+		max_cipher_size = CIPHER_BUF_SIZE;
 	}
 
 	if (strcmp(type, "text") == 0) {
@@ -561,12 +527,14 @@ int add_data(int sockfd, struct link *ln,
 
 	/* if len == 0, no data need to be moved */
 	if (len > 0) {
-		for (i = len - 1; i >= 0; i--)
-			buf[i + size] = buf[i];
+		/* for (i = len - 1; i >= 0; i--) */
+		/* 	buf[i + size] = buf[i]; */
+		memmove(buf + size, buf, len);
 	}
 
-	for (i = 0; i < size; i++)
-		buf[i] = data[i];
+	/* for (i = 0; i < size; i++) */
+	/* 	buf[i] = data[i]; */
+	memcpy(buf, data, size);
 
 	sock_info(sockfd, "%s: successfully added %d bytes",
 		  __func__, size);
@@ -575,38 +543,39 @@ int add_data(int sockfd, struct link *ln,
 
 int rm_data(int sockfd, struct link *ln, const char *type, int size)
 {
-	unsigned char *buf;
-	int i, len;
+	char *buf;
+	int len;
 
 	if (strcmp(type, "text") == 0) {
 		buf = ln->text;
-		len = ln->text_len;
 
-		if (len < size) {
+		if (ln->text_len < size) {
 			sock_warn(sockfd, "%s: size is too big(%d/%d)",
-				  __func__, size, len);
+				  __func__, size, ln->text_len);
 			return -1;
 		}
 
 		ln->text_len -= size;
+		len = ln->text_len;
 	} else if (strcmp(type, "cipher") == 0) {
 		buf = ln->cipher;
-		len = ln->text_len;
 		
-		if (len < size) {
+		if (ln->cipher_len < size) {
 			sock_warn(sockfd, "%s: size is too big(%d/%d)",
-				  __func__, size, len);
+				  __func__, size, ln->cipher_len);
 			return -1;
 		}
 
 		ln->cipher_len -= size;
+		len = ln->cipher_len;
 	} else {
 		sock_warn(sockfd, "%s: unknown type", __func__);
 		return -1;
 	}
 
-	for (i = size; i < len; i++)
-		buf[i - size] = buf[i];
+	/* for (i = size; i < len; i++) */
+	/* 	buf[i - size] = buf[i]; */
+	memmove(buf, buf + size, len);
 
 	sock_info(sockfd, "%s: successfully removed %d bytes",
 		  __func__, size);
@@ -616,22 +585,16 @@ int rm_data(int sockfd, struct link *ln, const char *type, int size)
 int check_ss_header(int sockfd, struct link *ln)
 {
 	int ret;
-	unsigned char atyp;
-	unsigned char addr[256];
+	char atyp;
+	char addr[256];
 	unsigned short port;
-	unsigned char port_str[6];
-	unsigned short addr_len;
+	char port_str[6];
+	short addr_len;
 	struct ss_header *req;
 	struct addrinfo hint;
 	struct addrinfo *res;
 
-	/* atyp(1) + address(4) + port(2) */
-	if (ln->text_len < 7) {
-		sock_warn(sockfd, "%s: text is too short",
-			  __func__);
-		pr_text(ln);
-		return -1;
-	}
+	memset(&hint, 0, sizeof(hint));
 
 	req = (void *)ln->text;
 
@@ -643,8 +606,14 @@ int check_ss_header(int sockfd, struct link *ln)
 	
 	atyp = req->atyp;
 	if (atyp == SOCKS5_ADDR_IPV4) {
-		hint.ai_family = AF_INET;
 		addr_len = 4;
+
+		/* atyp(1) + ipv4_addrlen(4) + port(2) */
+		if (ln->text_len < 7) {
+			goto too_short;
+		}
+
+		hint.ai_family = AF_INET;
 
 		if (inet_ntop(AF_INET, req->dst, addr, sizeof(addr)) == NULL) {
 			sock_warn(sockfd, "%s: inet_ntop() %s",
@@ -652,13 +621,18 @@ int check_ss_header(int sockfd, struct link *ln)
 			return -1;
 		}
 
-		port = ntohs((unsigned short)req->dst[addr_len]);
+		port = ntohs(*(unsigned short *)(req->dst + addr_len));
 	} else if (atyp == SOCKS5_ADDR_DOMAIN) {
-		hint.ai_family = AF_UNSPEC;
 		addr_len = req->dst[0];
+
+		/* atyp(1) + addr_size(1) + domain_len(addr_len) + port(2) */
+		if (ln->text_len < 1 + 1 + addr_len + 2)
+			goto too_short;
+
+		hint.ai_family = AF_UNSPEC;
 		strncpy(addr, req->dst + 1, addr_len);
 		addr[addr_len] = '\0';
-		port = ntohs((unsigned short)req->dst[addr_len + 1]);
+		port = ntohs(*(unsigned short *)(req->dst + addr_len + 1));
 		/* to compute the right data length(except header) */
 		addr_len += 1;
 	} else if (atyp == SOCKS5_ADDR_IPV6) {
@@ -671,13 +645,13 @@ int check_ss_header(int sockfd, struct link *ln)
 			return -1;
 		}
 
-		port = ntohs((unsigned short)req->dst[addr_len]);
+		port = ntohs(*(unsigned short *)(req->dst + addr_len));
 	} else {
 		sock_warn(sockfd, "%s: ATYP(%d) isn't legal");
 		return -1;
 	}
 
-	sock_info(sockfd, "%s: address: %s; port: %d",
+	sock_info(sockfd, "%s: remote address: %s; port: %d",
 		  __func__, addr, port);
 	sprintf(port_str, "%d", port);
 	ret = getaddrinfo(addr, port_str, &hint, &res);
@@ -686,9 +660,27 @@ int check_ss_header(int sockfd, struct link *ln)
 		return -1;
 	}
 
-	ln->text_len -= 1 + addr_len;
+	if (ln->state & SS_UDP) {
+		ln->text += 1 + addr_len + 2;
+		ln->ss_header_len = ln->text_len;
+		ln->text_len -= 1 + addr_len + 2;
+	} else {
+		ln->ss_header_len = 1 + addr_len + 2;
+		if (rm_data(sockfd, ln, "text", ln->ss_header_len) == -1)
+			return -1;
+	}
+
 	ln->server = res;
+
+	if (connect_server(ln) == -1)
+		return -1;
+
 	return 0;
+
+too_short:
+	sock_warn(sockfd, "%s: text is too short",
+		  __func__);
+	return -1;
 }
 
 int check_socks5_auth_header(int sockfd, struct link *ln)
@@ -727,8 +719,8 @@ int check_socks5_auth_header(int sockfd, struct link *ln)
 
 int check_socks5_cmd_header(int sockfd, struct link *ln)
 {
-	unsigned char cmd;
-	unsigned char atyp;
+	char cmd, atyp;
+	int ss_header_len;
 	struct socks5_cmd_request *req;
 
 	req = (void *)ln->text;
@@ -744,14 +736,8 @@ int check_socks5_cmd_header(int sockfd, struct link *ln)
 		/* nothing to do */
 	} else if (cmd == SOCKS5_UDP_ASSOCIATE) {
 		ln->state |= SS_UDP;
-		/* add memory for udp */
-		ln->text = realloc(ln->text, UDP_TEXT_BUF_SIZE);
-		if (ln->text == NULL)
-			return -1;
-
-		ln->cipher = realloc(ln->cipher, UDP_CIPHER_BUF_SIZE);
-		if (ln->cipher == NULL)
-			return -1;
+		sock_info(sockfd, "%s: udp associate received",
+			  __func__);
 	} else {
 		sock_warn(sockfd, "%s: CMD(%d) isn't supported", cmd);
 		return -1;
@@ -763,22 +749,50 @@ int check_socks5_cmd_header(int sockfd, struct link *ln)
 	}
 
 	atyp = req->atyp;
+	/* the following magic number 3 is actually ver + cmd + rsv */
 	if (atyp == SOCKS5_ADDR_IPV4) {
-		if (ln->text_len < 10)
+		/* atyp(1) + ipv4(4) + port(2) */
+		ss_header_len = 1 + 4 + 2;
+
+		if (ln->text_len < ss_header_len + 3)
 			goto too_short;
+
+		ln->ss_header_len = ss_header_len;
 	} else if (atyp == SOCKS5_ADDR_DOMAIN) {
-		if (ln->text_len < 7 + req->dst[0])
+		/* atyp(1) + addr_size(1) + domain_length(req->dst[0]) +
+		 * port(2) */
+		ss_header_len = 1 + 1 + req->dst[0] + 2;
+
+		if (ln->text_len < ss_header_len + 3)
 			goto too_short;
+
+		ln->ss_header_len = ss_header_len;
 	} else if (atyp == SOCKS5_ADDR_IPV6) {
-		if (ln->text_len < 22)
+		/* atyp(1) + ipv6_addrlen(16) + port(2) */
+		ss_header_len = 1 + 16 + 2;
+
+		if (ln->text_len < ss_header_len + 3)
 			goto too_short;
+
+		ln->ss_header_len = ss_header_len;
 	} else {
 		sock_warn(sockfd, "%s: ATYP(%d) isn't legal");
 		return -1;
 	}
 
-	/* remove VER, CMD, RSV for shadowsocks protocol */
-	if (rm_data(sockfd, ln, "text", 3) == -1)
+	if (!(ln->state & SS_UDP)) {
+		/* remove VER, CMD, RSV for shadowsocks protocol */
+		if (rm_data(sockfd, ln, "text", 3) == -1)
+			return -1;
+
+		/* advance text pointer to reserve ss tcp header, it
+		 * will be sent with following data received from
+		 * local */
+		ln->text += ss_header_len;
+	}
+
+	/* all seem okay, connect to server! */
+	if (connect_server(ln) == -1)
 		return -1;
 
 	return 0;
@@ -786,18 +800,13 @@ int check_socks5_cmd_header(int sockfd, struct link *ln)
 too_short:
 	sock_warn(sockfd, "%s: text is too short",
 		  __func__);
-	pr_text(ln);
 	return -1;
-}
-
-int check_socks5_udp_request(int sockfd, struct link *ln)
-{
 }
 
 int add_ss_header(int sockfd, struct link *ln)
 {
 	int ret = add_data(sockfd, ln, "text",
-			   ln->udp_header, ln->udp_header_len);
+			   ln->ss_header, ln->ss_header_len);
 
 	if (ret == -1)
 		sock_warn(sockfd, "%s: failed", __func__);
@@ -831,14 +840,14 @@ int create_socks5_cmd_reply(int sockfd, struct link *ln, int cmd)
 	int addr_len;
 	struct sockaddr_storage ss_addr;
 	int len = sizeof(struct sockaddr_storage);
-	struct socks5_cmd_reply *rep = (void *)ln->cipher;
+	struct socks5_cmd_reply *rep = (void *)ln->text;
 
 	rep->ver = 0x05;
 	rep->rep = cmd;
 	rep->rsv = 0x00;
 
 	if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
-			&len) == -1) {
+			(void *)&len) == -1) {
 		sock_warn(sockfd, "%s: getsockname() %s",
 			  __func__, strerror(errno));
 		return -1;
@@ -860,8 +869,8 @@ int create_socks5_cmd_reply(int sockfd, struct link *ln, int cmd)
 	memcpy(rep->bnd + addr_len, (void *)&port, sizeof(short));
 
 	len = sizeof(rep) + addr_len + 2;
-	ln->cipher_len = 0;
-	if (add_data(sockfd, ln, "cipher", (void *)rep, len) == -1)
+	ln->text_len = 0;
+	if (add_data(sockfd, ln, "text", (void *)rep, len) == -1)
 		return -1;
 
 	return 0;
@@ -870,22 +879,16 @@ int create_socks5_cmd_reply(int sockfd, struct link *ln, int cmd)
 static int do_read(int sockfd, struct link *ln, const char *type)
 {
 	int ret, len;
-	unsigned char *buf;
+	char *buf;
 
 	if (strcmp(type, "text") == 0) {
 		buf = ln->text;
-
-		if (ln->state & SS_UDP)
-			len = UDP_TEXT_BUF_SIZE;
-		else
-			len = TCP_TEXT_BUF_SIZE;
+		len = TEXT_BUF_SIZE;
 	} else if (strcmp(type, "cipher") == 0) {
 		buf = ln->cipher;
-
-		if (ln->state & SS_UDP)
-			len = UDP_CIPHER_BUF_SIZE;
-		else
-			len = TCP_CIPHER_BUF_SIZE;
+		/* cipher read only accept text length data, or it
+		 * will overflow text buffer */
+		len = TEXT_BUF_SIZE;
 	} else {
 		sock_warn(sockfd, "%s: unknown type %s",
 			  __func__, type);
@@ -893,12 +896,20 @@ static int do_read(int sockfd, struct link *ln, const char *type)
 	}
 
 	ret = recv(sockfd, buf, len, 0);
+
+	if (strcmp(type, "text") == 0) {
+		ln->text_len = ret;
+	} else if (strcmp(type, "cipher") == 0) {
+		ln->cipher_len = ret;
+	}
+
 	if (ret == -1) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
 			sock_warn(sockfd, "%s(%s): recv() %s",
 				  __func__, type, strerror(errno));
 			return -2;
 		}
+
 		poll_add(sockfd, POLLIN);
 		sock_info(sockfd, "%s(%s): recv() %s",
 			  __func__, type, strerror(errno));
@@ -911,12 +922,6 @@ static int do_read(int sockfd, struct link *ln, const char *type)
 		return -2;
 	}
 
-	if (strcmp(type, "text") == 0) {
-		ln->text_len = ret;
-	} else if (strcmp(type, "cipher") == 0) {
-		ln->cipher_len = ret;
-	}
-
 	sock_debug(sockfd, "%s(%s): recv() returned %d",
 		   __func__, type, ret);
 	return ret;
@@ -926,8 +931,6 @@ int do_text_read(int sockfd, struct link *ln)
 {
 	int ret = do_read(sockfd, ln, "text");
 
-	pr_text(ln);
-
 	return ret;
 }
 
@@ -935,15 +938,13 @@ int do_cipher_read(int sockfd, struct link *ln)
 {
 	int ret = do_read(sockfd, ln, "cipher");
 
-	pr_cipher(ln);
-
 	return ret;
 }
 
 static int do_send(int sockfd, struct link *ln, const char *type)
 {
 	int ret, state, len;
-	unsigned char *buf;
+	char *buf;
 
 	if (strcmp(type, "text") == 0) {
 		buf = ln->text;
@@ -962,7 +963,7 @@ static int do_send(int sockfd, struct link *ln, const char *type)
 	ret = send(sockfd, buf, len, 0);
 	if (ret == -1) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK &&
-		    errno != ENOTCONN) {
+		    errno != ENOTCONN && errno != EPIPE) {
 			sock_warn(sockfd, "%s(%s): send() %s",
 				  __func__, type, strerror(errno));
 			return -2;
@@ -977,7 +978,7 @@ static int do_send(int sockfd, struct link *ln, const char *type)
 		}
 	}
 
-	if (ret < ln->text_len) {
+	if (ret < len) {
 		rm_data(sockfd, ln, type, ret);
 		poll_add(sockfd, POLLOUT);
 		ln->state |= state;
@@ -987,8 +988,7 @@ static int do_send(int sockfd, struct link *ln, const char *type)
 	}
 		
 	ln->state &= ~state;
-	poll_rm(sockfd, POLLOUT);
-	poll_add(sockfd, POLLIN);
+	poll_set(sockfd, POLLIN);
 	sock_debug(sockfd, "%s(%s): send() returned %d",
 		   __func__, type, ret);
 	return ret;
@@ -998,16 +998,15 @@ int do_text_send(int sockfd, struct link *ln)
 {
 	int ret = do_send(sockfd, ln, "text");
 
-	pr_text(ln);
-
 	return ret;
 }
 
 int do_cipher_send(int sockfd, struct link *ln)
 {
-	int ret;
+	int ret = do_send(sockfd, ln, "cipher");
 
-	ret = do_send(sockfd, ln, "cipher");
+	if (ret != -2 && ret != -1)
+		ln->state |= WAITING;
 
 	return ret;
 }

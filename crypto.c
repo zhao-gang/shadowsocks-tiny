@@ -49,6 +49,8 @@ int crypto_init(char *passwd, char *method)
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
 	OPENSSL_config(NULL);
+
+	return 0;
 }
 
 void crypto_exit(void)
@@ -77,8 +79,15 @@ int add_iv(int sockfd, struct link *ln)
 int receive_iv(int sockfd, struct link *ln)
 {
 	int ret;
-	int iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
+	int iv_len;
 
+	if (!ln->evp_cipher) {
+		ln->evp_cipher = EVP_get_cipherbyname(method);
+		if (!ln->evp_cipher)
+			return -1;
+	}
+
+	iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
 	memcpy(ln->iv, ln->cipher, iv_len);
 	ln->iv[iv_len] = '\0';
 	ret = rm_data(sockfd, ln, "cipher", iv_len);
@@ -101,22 +110,25 @@ int create_cipher(struct link *ln, bool iv)
 	if (md == NULL)
 		goto err;
 
-	ln->evp_cipher = EVP_get_cipherbyname(method);
-	if (ln->evp_cipher == NULL)
-		goto err;
+	if (!ln->evp_cipher) {
+		ln->evp_cipher = EVP_get_cipherbyname(method);
+		if (ln->evp_cipher == NULL)
+			goto err;
+	}
 
 	key_len = EVP_CIPHER_key_length(ln->evp_cipher);
 	iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
 
 	if (!iv) {
-		if (RAND_bytes(ln->iv, iv_len) == -1)
+		if (RAND_bytes((void *)ln->iv, iv_len) == -1)
 			goto err;
 
 		ln->iv[iv_len] = '\0';
 	}
 
-	if (EVP_BytesToKey(ln->evp_cipher, md, NULL, passwd, strlen(passwd), 1,
-			   ln->key, ln->iv) == 0)
+	if (EVP_BytesToKey(ln->evp_cipher, md, NULL,
+			   (void *)passwd, strlen(passwd), 1,
+			   (void *)ln->key, (void *)ln->iv) == 0)
 		goto err;
 
 	ln->key[key_len] = '\0';
@@ -126,9 +138,6 @@ int create_cipher(struct link *ln, bool iv)
 		goto err;
 
 	pr_link_info(ln);
-	pr_iv(ln);
-	pr_key(ln);
-	pr_debug("%s succeeded\n", __func__);
 	return 0;
 
 err:
@@ -146,24 +155,21 @@ int encrypt(int sockfd, struct link *ln)
 			goto err;
 
 	if (EVP_EncryptInit_ex(ln->ctx, ln->evp_cipher, NULL,
-			       ln->key, ln->iv) != 1)
+			       (void *)ln->key, (void *)ln->iv) != 1)
 		goto err;
 
-	if (EVP_EncryptUpdate(ln->ctx, ln->cipher, &len,
-			      ln->text, ln->text_len) != 1)
+	if (EVP_EncryptUpdate(ln->ctx, (void *)ln->cipher, &len,
+			      (void *)ln->text, ln->text_len) != 1)
 		goto err;
 
 	cipher_len = len;
 
-	if (EVP_EncryptFinal_ex(ln->ctx, ln->cipher + len, &len) != 1)
+	if (EVP_EncryptFinal_ex(ln->ctx, (void *)(ln->cipher + len), &len) != 1)
 		goto err;
 
 	cipher_len += len;
 	ln->cipher_len = cipher_len;
 
-	pr_link_debug(ln);
-	pr_text(ln);
-	pr_cipher(ln);
 	sock_info(sockfd, "%s succeeded", __func__);
 	return cipher_len;
 
@@ -178,39 +184,29 @@ int decrypt(int sockfd, struct link *ln)
 {
 	int len, text_len;
 
-	if (ln->evp_cipher == NULL)
+	if (ln->ctx == NULL)
 		if (create_cipher(ln, true) == -1)
 			goto err;
 
 	if (EVP_DecryptInit_ex(ln->ctx, ln->evp_cipher, NULL,
-			       ln->key, ln->iv) != 1) {
-		pr_link_debug(ln);
-		pr_debug("EVP_DecryptInit_ex failed\n");
+			       (void *)ln->key, (void *)ln->iv) != 1) {
 		goto err;
 	}
 
-	if (EVP_DecryptUpdate(ln->ctx, ln->text, &len,
-			      ln->cipher, ln->cipher_len) != 1) {
-		pr_link_debug(ln);
-		pr_debug("EVP_DecryptUpdate failed\n");
+	if (EVP_DecryptUpdate(ln->ctx, (void *)ln->text, &len,
+			      (void *)ln->cipher, ln->cipher_len) != 1) {
 		goto err;
 	}
 
 	text_len = len;
 
-	if (EVP_DecryptFinal_ex(ln->ctx, ln->cipher + len, &len) != 1) {
-		pr_link_debug(ln);
-		pr_debug("EVP_DecryptUpdate failed\n");
+	if (EVP_DecryptFinal_ex(ln->ctx, (void *)(ln->cipher + len), &len) != 1) {
 		goto err;
 	}
 
 	text_len += len;
 	ln->text_len = text_len;
 
-	pr_link_info(ln);
-	pr_cipher(ln);
-	pr_text(ln);
-	sock_info(sockfd, "%s succeeded", __func__);
 	return text_len;
 
 err:

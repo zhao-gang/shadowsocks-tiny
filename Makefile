@@ -1,16 +1,16 @@
-CFLAGS += -g
+CFLAGS += -g -Wall
 
 .PHONY: all
 all: sslocal sserver test
 
 sslocal : client.c common.c crypto.c log.c
-	$(CC) -o $@ -g $^ -lcrypto
+	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
 
 sserver : server.c common.c crypto.c log.c
-	$(CC) -o $@ -g $^ -lcrypto
+	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
 
 test: test.c common.c crypto.c log.c
-	$(CC) -o $@ -g $^ -lcrypto
+	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
 
 client.c: common.c crypto.c
 

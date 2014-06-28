@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
@@ -7,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <unistd.h>
 
 #include "common.h"
 #include "log.h"
@@ -27,10 +29,10 @@ int main(int argc, char **argv)
 {
 	int opt, sockfd, size;
 	int ret = 0;
+	bool udp = false;
 	char text[2048];
 	char result[2048];
 	char *server = NULL;
-	char *local = NULL;
 	char *s_port = NULL;
 	struct addrinfo *s_info;
 	struct sockaddr_storage ss;
@@ -40,12 +42,13 @@ int main(int argc, char **argv)
 		{"server", required_argument, 0, 's'},
 		{"server-port", required_argument, 0, 'p'},
 		{"text", required_argument, 0, 't'},
+		{"udp", no_argument, 0, 'u'},
 		{"debug", no_argument, 0, 'd'},
 		{"verbose", no_argument, 0, 'v'},
 		{0, 0, 0, 0},
 	};
 
-	while ((opt = getopt_long(argc, argv, "s:p:t:dvh",
+	while ((opt = getopt_long(argc, argv, "s:p:t:udvh",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 's':
@@ -56,6 +59,9 @@ int main(int argc, char **argv)
 			break;
 		case 't':
 			strcpy(text, optarg);
+			break;
+		case 'u':
+			udp = true;
 			break;
 		case 'd':
 			debug = true;
@@ -84,6 +90,14 @@ int main(int argc, char **argv)
 		goto out_addrinfo;
 	}
 
+	if (udp == true) {
+		while (s_info && s_info->ai_socktype != SOCK_DGRAM)
+			s_info = s_info->ai_next;
+	}
+
+	if (!s_info)
+		pr_exit("can't get udp address\n");
+
 	sockfd = socket(s_info->ai_family, s_info->ai_socktype, 0);
 	if (sockfd == -1)
 		err_exit("socket");
@@ -91,7 +105,7 @@ int main(int argc, char **argv)
 	if (connect(sockfd, s_info->ai_addr, s_info->ai_addrlen) == -1)
 		pr_warn("connect failed\n");
 
-	if (getsockname(sockfd, (struct sockaddr *)&ss, &addrlen) != 0)
+	if (getsockname(sockfd, (struct sockaddr *)&ss, (void *)&addrlen) != 0)
 		err_exit("getsockname");
 
 	if (ss.ss_family == AF_INET) {
@@ -112,6 +126,9 @@ int main(int argc, char **argv)
 	result[size] = '\0';
 
 	pr_debug("received: %s, len: %d\n", result, size);
+
+	while (1)
+		;
 
 out_addrinfo:
 	if (s_info)
