@@ -1,12 +1,12 @@
+#include <errno.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-#include <netdb.h>
+#include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -189,8 +189,6 @@ int poll_set(int sockfd, short events)
 	for (i = 1; i < nfds; i++) {
 		if (clients[i].fd == sockfd) {
 			clients[i].events = events;
-			sock_debug(sockfd, "%s: events(%s)",
-				   __func__, events_str);
 			return 0;
 		}
 	}
@@ -199,8 +197,6 @@ int poll_set(int sockfd, short events)
 		if (clients[i].fd == -1) {
 			clients[i].fd = sockfd;
 			clients[i].events = events;
-			sock_info(sockfd, "%s: added to poll(%s)",
-				  __func__, events_str);
 			return 0;
 		}
 	}
@@ -227,7 +223,6 @@ int poll_add(int sockfd, short events)
 	}
 
 	clients[i].events |= events;
-	sock_info(sockfd, "%s: added event(%s)", __func__, events_str);
 	return 0;
 }
 
@@ -249,27 +244,72 @@ int poll_rm(int sockfd, short events)
 	}
 
 	clients[i].events &= ~events;
-	sock_info(sockfd, "%s: remove event(%s)", __func__, events_str);
 	return 0;
 }
 
 int poll_del(int sockfd)
 {
 	int i;
-	char events_str[42] = {'\0'};
 
 	for (i = 0; i < nfds; i++) {
 		if (clients[i].fd == sockfd) {
 			clients[i].fd = -1;
-			poll_events_string(clients[i].events, events_str);
-			sock_info(sockfd, "deleted from poll(%s)",
-				  events_str);
 			return 0;
 		}
 	}
 
-	sock_warn(sockfd, "%s: socket not in poll", __func__);
+	pr_warn("%s: sockfd(%d) not in poll\n", __func__, sockfd);
 	return -1;
+}
+
+/**
+ * time_out - check if it's timed out
+ *
+ * @this: the time_t we want to compare(usually is NOW)
+ * @that: the time_t we want to check
+ * @value: how long we think it's a timeout
+ *
+ * Return: 0 means time out, -1 means not time out
+ */
+static int time_out(time_t this, time_t that, double value)
+{
+	if (difftime(this, that) > value)
+		return 0;
+	else
+		return -1;
+}
+
+void reaper(void)
+{
+	double value;
+	struct link *ln = link_head;
+	struct link *next = ln;
+	time_t now = time(NULL);
+	static time_t checked = (time_t)-1;
+
+	if (checked == (time_t)-1) {
+		checked = now;
+	} else if (time_out(now, checked, TCP_READ_TIMEOUT) == -1) {
+		return;
+	} else {
+		checked = now;
+	}
+
+	while (next) {
+		ln = next;
+		next = ln->next;
+
+		if (ln->state & SERVER)
+			value = TCP_READ_TIMEOUT;
+		else
+			value = TCP_CONNECT_TIMEOUT;
+
+		if (time_out(now, ln->time, value) == 0) {
+			pr_info("%s: timeout, closing\n", __func__);
+			pr_link_debug(ln);
+			destroy_link(ln);
+		}
+	}
 }
 
 struct link *create_link(int sockfd)
@@ -302,7 +342,7 @@ struct link *create_link(int sockfd)
 		link_head = ln;
 	}
 
-	sock_info(sockfd, "%s: added to link", __func__);
+	ln->time = time(NULL);
 	return ln;
 
 err:
@@ -315,7 +355,7 @@ err:
 	if (ln)
 		free(ln);
 
-	sock_warn(sockfd, "%s: can't allocate memory for link",  __func__);
+	sock_warn(sockfd, "%s: failed", __func__);
 	return NULL;
 }
 
@@ -388,11 +428,7 @@ static void free_link(struct link *ln)
 
 void destroy_link(struct link *ln)
 {
-	if ((unlink_link(ln)) == -1) {
-		pr_link_warn(ln);
-		pr_warn("%s: unlink_link failed\n", __func__);
-	}
-
+	unlink_link(ln);
 	poll_del(ln->local_sockfd);
 	poll_del(ln->server_sockfd);
 	close(ln->local_sockfd);
@@ -461,14 +497,13 @@ int connect_server(struct link *ln)
 			if (sockfd == -1)
 				goto err;
 			ln->server_sockfd = sockfd;
+			ln->time = time(NULL);
 			ret = connect(sockfd, sp->ai_addr, sp->ai_addrlen);
 			if (ret == -1) {
 				/* it's ok to return inprogress, will
 				 * handle it later */
 				if (errno == EINPROGRESS) {
 					poll_set(sockfd, POLLOUT);
-					sock_info(sockfd, "%s: connect() %s",
-						  __func__, strerror(errno));
 					return 0;
 				} else {
 					goto err;
@@ -528,8 +563,6 @@ int add_data(int sockfd, struct link *ln,
 		memmove(buf + size, buf, len);
 
 	memcpy(buf, data, size);
-	sock_info(sockfd, "%s: successfully added %d bytes",
-		  __func__, size);
 	return 0;
 }
 
@@ -565,12 +598,8 @@ int rm_data(int sockfd, struct link *ln, const char *type, int size)
 		return -1;
 	}
 
-	/* for (i = size; i < len; i++) */
-	/* 	buf[i - size] = buf[i]; */
 	memmove(buf, buf + size, len);
 
-	sock_info(sockfd, "%s: successfully removed %d bytes",
-		  __func__, size);
 	return 0;
 }
 
@@ -648,7 +677,7 @@ int check_ss_header(int sockfd, struct link *ln)
 	sprintf(port_str, "%d", port);
 	ret = getaddrinfo(addr, port_str, &hint, &res);
 	if (ret != 0) {
-		pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
+		sock_warn(sockfd, "getaddrinfo error: %s", gai_strerror(ret));
 		return -1;
 	}
 
@@ -730,6 +759,8 @@ int check_socks5_cmd_header(int sockfd, struct link *ln)
 		ln->state |= SS_UDP;
 		sock_info(sockfd, "%s: udp associate received",
 			  __func__);
+		sock_warn(sockfd, "udp socks5 not supported(for now)");
+		return -1;
 	} else {
 		sock_warn(sockfd, "%s: CMD(%d) isn't supported", cmd);
 		return -1;
@@ -865,7 +896,6 @@ int create_socks5_cmd_reply(int sockfd, struct link *ln, int cmd)
 	if (add_data(sockfd, ln, "text", (void *)rep, len) == -1)
 		return -1;
 
-	pr_char(ln);
 	return 0;
 }
 
@@ -888,6 +918,7 @@ static int do_read(int sockfd, struct link *ln, const char *type)
 		return -2;
 	}
 
+	ln->time = time(NULL);
 	ret = recv(sockfd, buf, len, 0);
 
 	if (strcmp(type, "text") == 0) {
@@ -904,8 +935,6 @@ static int do_read(int sockfd, struct link *ln, const char *type)
 		}
 
 		poll_add(sockfd, POLLIN);
-		sock_info(sockfd, "%s(%s): recv() %s",
-			  __func__, type, strerror(errno));
 		return -1;
 	} else if (ret == 0) {
 		/* recv() returned 0 means the peer has shut down,
@@ -915,8 +944,6 @@ static int do_read(int sockfd, struct link *ln, const char *type)
 		return -2;
 	}
 
-	sock_debug(sockfd, "%s(%s): recv() returned %d",
-		   __func__, type, ret);
 	return ret;
 }
 
@@ -924,12 +951,16 @@ int do_text_read(int sockfd, struct link *ln)
 {
 	int ret = do_read(sockfd, ln, "text");
 
+	sock_debug(sockfd, "%s: returned %d", __func__, ret);
+
 	return ret;
 }
 
 int do_cipher_read(int sockfd, struct link *ln)
 {
 	int ret = do_read(sockfd, ln, "cipher");
+
+	sock_debug(sockfd, "%s: returned %d", __func__, ret);
 
 	return ret;
 }
@@ -953,6 +984,7 @@ static int do_send(int sockfd, struct link *ln, const char *type)
 		return -2;
 	}
 
+	ln->time = time(NULL);
 	ret = send(sockfd, buf, len, 0);
 	if (ret == -1) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK &&
@@ -965,8 +997,6 @@ static int do_send(int sockfd, struct link *ln, const char *type)
 			 * connection finished */
 			poll_add(sockfd, POLLOUT);
 			ln->state |= state;
-			sock_info(sockfd, "%s(%s): send() %s",
-				  __func__, type, strerror(errno));
 			return -1;
 		}
 	}
@@ -982,14 +1012,14 @@ static int do_send(int sockfd, struct link *ln, const char *type)
 		
 	ln->state &= ~state;
 	poll_set(sockfd, POLLIN);
-	sock_debug(sockfd, "%s(%s): send() returned %d",
-		   __func__, type, ret);
 	return ret;
 }
 
 int do_text_send(int sockfd, struct link *ln)
 {
 	int ret = do_send(sockfd, ln, "text");
+
+	sock_debug(sockfd, "%s: returned %d", __func__, ret);
 
 	return ret;
 }
@@ -998,8 +1028,7 @@ int do_cipher_send(int sockfd, struct link *ln)
 {
 	int ret = do_send(sockfd, ln, "cipher");
 
-	if (ret != -2 && ret != -1)
-		ln->state |= WAITING;
+	sock_debug(sockfd, "%s: returned %d", __func__, ret);
 
 	return ret;
 }

@@ -129,20 +129,29 @@ void pr_ai_warn(struct addrinfo *info, const char *fmt, ...)
 	va_end(ap);
 }
 
-int sock_addr(int sockfd, char *str)
+static int get_sock_addr(int sockfd, char *str, int *port, const char *type)
 {
 	void *addrptr;
 	struct sockaddr_storage ss_addr;
 	int len = sizeof(struct sockaddr_storage);
 
-	if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
-			(void *)&len) == -1)
-		goto err;
+	if (strcmp(type, "peer") == 0) {
+		if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
+				(void *)&len) == -1)
+			goto err;
+	} else if (strcmp(type, "sock") == 0) {
+		if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
+				(void *)&len) == -1)
+			goto err;
+	}
 
-	if (ss_addr.ss_family == AF_INET)
+	if (ss_addr.ss_family == AF_INET) {
 		addrptr = &((struct sockaddr_in *)&ss_addr)->sin_addr;
-	else
+		*port = ntohs(((struct sockaddr_in *)&ss_addr)->sin_port);
+	} else if (ss_addr.ss_family == AF_INET6) {
 		addrptr = &((struct sockaddr_in6 *)&ss_addr)->sin6_addr;
+		*port = ntohs(((struct sockaddr_in6 *)&ss_addr)->sin6_port);
+	}
 
 	if (inet_ntop(ss_addr.ss_family, addrptr, str,
 		      INET6_ADDRSTRLEN) == NULL)
@@ -151,102 +160,32 @@ int sock_addr(int sockfd, char *str)
 	return 0;
 
 err:
-	perror("sock_addr");
+	pr_debug("%s: %s\n", __func__, strerror(errno));
 	return -1;
-}
-
-static int _sock_peer_addr(int sockfd, char *str)
-{
-	void *addrptr;
-	struct sockaddr_storage ss_addr;
-	int len = sizeof(struct sockaddr_storage);
-
-	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
-			(void *)&len) == -1)
-		goto err;
-
-	if (ss_addr.ss_family == AF_INET)
-		addrptr = &((struct sockaddr_in *)&ss_addr)->sin_addr;
-	else
-		addrptr = &((struct sockaddr_in6 *)&ss_addr)->sin6_addr;
-
-	if (inet_ntop(ss_addr.ss_family, addrptr, str,
-		      INET6_ADDRSTRLEN) == NULL)
-		goto err;
-
-	return 0;
-
-err:
-	return -1;
-}
-
-static int _sock_addr(int sockfd, char *str)
-{
-	int ret;
-
-	ret = _sock_peer_addr(sockfd, str);
-	if (ret == 0)
-		return 0;
-	else
-		return sock_addr(sockfd, str);
-}
-
-int sock_port(int sockfd)
-{
-	struct sockaddr_storage ss_addr;
-	int len = sizeof(struct sockaddr_storage);
-
-	if (getsockname(sockfd, (struct sockaddr *)&ss_addr,
-			(void *)&len) == -1)
-		goto err;
-
-	if (ss_addr.ss_family == AF_INET)
-		return ntohs(((struct sockaddr_in *)&ss_addr)->sin_port);
-	else
-		return ntohs(((struct sockaddr_in6 *)&ss_addr)->sin6_port);
-
-err:
-	perror("sock_port");
-	return -1;
-}
-
-static int _sock_peer_port(int sockfd)
-{
-	struct sockaddr_storage ss_addr;
-	int len = sizeof(struct sockaddr_storage);
-
-	if (getpeername(sockfd, (struct sockaddr *)&ss_addr,
-			(void *)&len) == -1)
-		goto err;
-
-	if (ss_addr.ss_family == AF_INET)
-		return ntohs(((struct sockaddr_in *)&ss_addr)->sin_port);
-	else
-		return ntohs(((struct sockaddr_in6 *)&ss_addr)->sin6_port);
-
-err:
-	return -1;
-}
-
-static int _sock_port(int sockfd)
-{
-	int port;
-
-	port = _sock_peer_port(sockfd);
-	if (port != -1)
-		return port;
-	else
-		return sock_port(sockfd);
 }
 
 static void sock_print(int sockfd, char *level, const char *fmt, va_list ap)
 {
-	char str[INET6_ADDRSTRLEN];
+	int port;
+	char *type;
+	char str[INET6_ADDRSTRLEN] = {'\0'};
 
-	_sock_addr(sockfd, str);
+	if (get_sock_addr(sockfd, str, &port, "peer") == 0)
+		type = "peer";
+	else if (get_sock_addr(sockfd, str, &port, "sock") == 0)
+		type = "sock";
+	else
+		type = "sockfd";
+		
 	printf("%s: ", level);
 	vprintf(fmt, ap);
-	printf(" (%s:%d)\n", str, _sock_port(sockfd));
+
+	if (strcmp(type, "peer") == 0)
+		printf("  (peer)%s:%d\n", str, port);
+	else if (strcmp(type, "sock") == 0)
+		printf("  %s:%d\n", str, port);
+	else if (strcmp(type, "sockfd") == 0)
+		printf("  (sockfd)%d\n", sockfd);
 }
 
 void sock_debug(int sockfd, const char *fmt, ...)

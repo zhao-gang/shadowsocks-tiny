@@ -36,7 +36,6 @@ int client_do_local_read(int sockfd, struct link *ln)
 {
 	int ret, cmd;
 
-
 	if (do_text_read(sockfd, ln) == -2) {
 		goto out;
 	}
@@ -154,10 +153,6 @@ out:
 int client_do_pollin(int sockfd, struct link *ln)
 {
 	if (sockfd == ln->local_sockfd) {
-		/* if (ln->state & WAITING) { */
-		/* 	sock_info(sockfd, "%s: waiting for server data", */
-		/* 		  __func__); */
-		/* 	goto out; */
 		if (ln->state & PENDING) {
 			sock_info(sockfd, "%s: pending when pollin",
 				  __func__);
@@ -172,11 +167,6 @@ int client_do_pollin(int sockfd, struct link *ln)
 			goto out;
 		} else if (client_do_server_read(sockfd, ln) == -1) {
 			goto clean;
-		/* } else { */
-		/* 	/\* read okay, we can continue to read from */
-		/* 	 * local *\/ */
-		/* 	ln->state &= ~WAITING; */
-		/* 	goto out; */
 		}
 	}
 
@@ -235,6 +225,7 @@ int client_do_pollout(int sockfd, struct link *ln)
 	} else if (sockfd == ln->server_sockfd) {
 		/* pending connect finished */
 		if (!(ln->state & SERVER)) {
+			ln->time = time(NULL);
 			if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR,
 				       &optval, (void *)&optlen) == -1) {
 				sock_warn(sockfd, "%s: getsockopt() %s",
@@ -268,7 +259,6 @@ int client_do_pollout(int sockfd, struct link *ln)
 	}
 
 out:
-	sock_info(sockfd, "%s succeeded", __func__);
 	return 0;
 clean:
 	sock_info(sockfd, "%s: closed", __func__);
@@ -278,7 +268,8 @@ clean:
 
 int main(int argc, char **argv)
 {
-	int i, opt, sockfd, listenfd, revents;
+	short revents;
+	int i, opt, sockfd, listenfd;
 	int ret = 0;
 	char *server = NULL;
 	char *local = NULL;
@@ -345,7 +336,7 @@ int main(int argc, char **argv)
 			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out_addrinfo;
 		}
-		pr_ai_debug(s_info, "server addrinfo");
+		pr_ai_info(s_info, "server addrinfo");
 	} else {
 		pr_warn("Either server addr or server port is not specified\n");
 		usage_client(argv[0]);
@@ -377,16 +368,11 @@ int main(int argc, char **argv)
 	clients[0].events = POLLIN;
 
 	while (1) {
-		pr_debug("start polling\n");
-		ret = poll(clients, nfds, -1);
-		pr_debug("poll returned %d\n", ret);
+		ret = poll(clients, nfds, TCP_READ_TIMEOUT * 1000);
 		if (ret == -1)
 			err_exit("poll error");
-
-		/* can't happen, because we have set timeout to
-		 * infinite, but as a paranoid... */
-		if (ret == 0) {
-			pr_warn("poll returned zero\n");
+		else if (ret == 0) {
+			reaper();
 			continue;
 		}
 
@@ -416,33 +402,36 @@ int main(int argc, char **argv)
 				continue;
 
 			revents = clients[i].revents;
+			if (revents == 0)
+				continue;
+
+			ln = get_link(sockfd);
+			if (ln == NULL) {
+				sock_warn(sockfd, "close: can't get link");
+				close(sockfd);
+				continue;
+			}
+			
 			if (revents & POLLIN) {
-				sock_debug(sockfd, "POLLIN");
-				ln = get_link(sockfd);
-				if (ln == NULL) {
-					sock_warn(sockfd, "pollin: no link");
-					close(sockfd);
-				} else {
-					client_do_pollin(sockfd, ln);
-				}
+				client_do_pollin(sockfd, ln);
 			}
 
 			if (revents & POLLOUT) {
-				sock_debug(sockfd, "POLLOUT");
-				ln = get_link(sockfd);
-				if (ln == NULL) {
-					sock_warn(sockfd, "pollout: no link");
-					close(sockfd);
-				} else {
-					client_do_pollout(sockfd, ln);
-				}
+				client_do_pollout(sockfd, ln);
 			}
 
-			if (revents & POLLERR || revents & POLLHUP ||
-			    revents & POLLNVAL) {
-				sock_warn(sockfd, "poll error");
+			if (revents & POLLPRI) {
+				sock_warn(sockfd, "POLLPRI");
+			} else if (revents & POLLERR) {
+				sock_warn(sockfd, "POLLERR");
+			} else if (revents & POLLHUP) {
+				sock_warn(sockfd, "POLLHUP");
+			} else if (revents & POLLNVAL) {
+				sock_warn(sockfd, "POLLNVAL");
 			}
 		}
+
+		reaper();
 	}
 
 	crypto_exit();

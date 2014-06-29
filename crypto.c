@@ -67,9 +67,6 @@ int add_iv(int sockfd, struct link *ln)
 	ret = add_data(sockfd, ln, "cipher", ln->iv, iv_len);
 	if (ret != 0) {
 		sock_warn(sockfd, "%s failed", __func__);
-	} else {
-		sock_info(sockfd, "%s succeeded", __func__);
-		pr_iv(ln);
 	}
 
 	return ret;
@@ -93,9 +90,6 @@ int receive_iv(int sockfd, struct link *ln)
 	ret = rm_data(sockfd, ln, "cipher", iv_len);
 	if (ret != 0) {
 		sock_warn(sockfd, "%s failed", __func__);
-	} else {
-		sock_info(sockfd, "%s succeeded", __func__);
-		pr_iv(ln);
 	}
 
 	return ret;
@@ -137,7 +131,6 @@ int create_cipher(struct link *ln, bool iv)
 	if (ln == NULL)
 		goto err;
 
-	pr_link_info(ln);
 	return 0;
 
 err:
@@ -170,12 +163,11 @@ int encrypt(int sockfd, struct link *ln)
 	cipher_len += len;
 	ln->cipher_len = cipher_len;
 
-	sock_info(sockfd, "%s succeeded", __func__);
 	return cipher_len;
 
 err:
 	ERR_print_errors_fp(stderr);
-	pr_link_info(ln);
+	pr_link_warn(ln);
 	sock_warn(sockfd, "%s failed", __func__);
 	return -1;
 }

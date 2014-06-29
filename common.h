@@ -3,6 +3,7 @@
 
 #include <poll.h>
 #include <stdbool.h>
+#include <time.h>
 #include <netinet/in.h>
 #include <openssl/evp.h>
 #include <sys/types.h>
@@ -15,24 +16,27 @@
 #define SA_IN6 struct sockaddr_in6
 #define SS struct sockaddr_storage
 
-#define MAX_CONNECTION 64
-#define TEXT_BUF_SIZE 65536
+#define TCP_READ_TIMEOUT 15
+#define TCP_CONNECT_TIMEOUT 8
+#define MAX_CONNECTION 128
+#define TEXT_BUF_SIZE 32768
 #define CIPHER_BUF_SIZE (TEXT_BUF_SIZE + EVP_MAX_BLOCK_LENGTH + \
 			     EVP_MAX_IV_LENGTH)
 
+#define BITS(x) (1 << (x))
+
 enum link_state {
-	LOCAL = 1 << 1,
-	SERVER = 1 << 2,
-	WAITING = 1 << 3,
-	TEXT_PENDING = 1 << 4,
-	CIPHER_PENDING = 1 << 5,
-	SOCKS5_AUTH_REQUEST_RECEIVED = 1 << 6,
-	SOCKS5_AUTH_REPLY_SENT = 1 << 7,
-	SOCKS5_CMD_REQUEST_RECEIVED = 1 << 8,
-	SOCKS5_CMD_REPLY_SENT = 1 << 9,
-	SS_TCP_HEADER_SENT = 1 << 10,
-	SS_TCP_HEADER_RECEIVED = 1 << 11,
-	SS_UDP = 1 << 12,
+	LOCAL = BITS(1),
+	SERVER = BITS(2),
+	TEXT_PENDING = BITS(3),
+	CIPHER_PENDING = BITS(4),
+	SOCKS5_AUTH_REQUEST_RECEIVED = BITS(5),
+	SOCKS5_AUTH_REPLY_SENT = BITS(6),
+	SOCKS5_CMD_REQUEST_RECEIVED = BITS(7),
+	SOCKS5_CMD_REPLY_SENT = BITS(8),
+	SS_TCP_HEADER_SENT = BITS(9),
+	SS_TCP_HEADER_RECEIVED = BITS(10),
+	SS_UDP = BITS(11),
 };
 
 #define	LINKED (LOCAL | SERVER)
@@ -40,6 +44,7 @@ enum link_state {
 
 struct link {
 	enum link_state state;
+	time_t time;
 	int local_sockfd;
 	int server_sockfd;
 	int text_len;
@@ -125,6 +130,7 @@ int poll_set(int sockfd, short events);
 int poll_add(int sockfd, short events);
 int poll_rm(int sockfd, short events);
 int poll_del(int sockfd);
+void reaper(void);
 struct link *create_link(int sockfd);
 struct link *get_link(int sockfd);
 void destroy_link(struct link *ln);
