@@ -92,7 +92,8 @@ static void pr_data(struct link *ln, const char *type)
 	} else if (strcmp(type, "key") == 0) {
 		len = EVP_CIPHER_key_length(ln->evp_cipher);
 		data = (void *)ln->key;
-	} else if (strcmp(type, "text") == 0) {
+	} else if (strcmp(type, "text") == 0 ||
+		   strcmp(type, "char") == 0) {
 		len = ln->text_len;
 		data = (void *)ln->text;
 	} else if (strcmp(type, "cipher") == 0) {
@@ -105,13 +106,13 @@ static void pr_data(struct link *ln, const char *type)
 
 	printf("%s:\n", type);
 
-	/* if (strcmp(type, "text") == 0) { */
-	/* 	for (i = 0; i < len; i++) */
-	/* 		printf("%c", (char)data[i]); */
+	if (strcmp(type, "char") == 0) {
+		for (i = 0; i < len; i++)
+			printf("%c", (char)data[i]);
 
-	/* 	printf("\n"); */
-	/* 	return; */
-	/* } */
+		printf("\n");
+		return;
+	}
 
 	for (i = 0; i < len - 1; i++) {
 		if (i % 10 == 9)
@@ -136,6 +137,11 @@ void pr_key(struct link *ln)
 void pr_text(struct link *ln)
 {
 	pr_data(ln, "text");
+}
+
+void pr_char(struct link *ln)
+{
+	pr_data(ln, "char");
 }
 
 void pr_cipher(struct link *ln)
@@ -488,34 +494,26 @@ int add_data(int sockfd, struct link *ln,
 	     const char *type, char *data, int size)
 {
 	char *buf;
-	int len, max_text_size, max_cipher_size;
-
-	if (ln->state & SS_UDP) {
-		max_text_size = TEXT_BUF_SIZE;
-		max_cipher_size = CIPHER_BUF_SIZE;
-	} else {
-		max_text_size = TEXT_BUF_SIZE;
-		max_cipher_size = CIPHER_BUF_SIZE;
-	}
+	int len;
 
 	if (strcmp(type, "text") == 0) {
 		buf = ln->text;
 		len = ln->text_len;
 
-		if (len + size > max_text_size) {
+		if (len + size > TEXT_BUF_SIZE) {
 			sock_warn(sockfd, "%s: data exceed max length(%d/%d)",
-				  __func__, len + size, max_text_size);
+				  __func__, len + size, TEXT_BUF_SIZE);
 			return -1;
 		}
 
 		ln->text_len += size;
 	} else if (strcmp(type, "cipher") == 0) {
 		buf = ln->cipher;
-		len = ln->text_len;
+		len = ln->cipher_len;
 
-		if (len + size > max_cipher_size) {
+		if (len + size > CIPHER_BUF_SIZE) {
 			sock_warn(sockfd, "%s: data exceed max length(%d/%d)",
-				  __func__, len + size, max_cipher_size);
+				  __func__, len + size, CIPHER_BUF_SIZE);
 			return -1;
 		}
 
@@ -526,16 +524,10 @@ int add_data(int sockfd, struct link *ln,
 	}
 
 	/* if len == 0, no data need to be moved */
-	if (len > 0) {
-		/* for (i = len - 1; i >= 0; i--) */
-		/* 	buf[i + size] = buf[i]; */
+	if (len > 0)
 		memmove(buf + size, buf, len);
-	}
 
-	/* for (i = 0; i < size; i++) */
-	/* 	buf[i] = data[i]; */
 	memcpy(buf, data, size);
-
 	sock_info(sockfd, "%s: successfully added %d bytes",
 		  __func__, size);
 	return 0;
@@ -868,11 +860,12 @@ int create_socks5_cmd_reply(int sockfd, struct link *ln, int cmd)
 	memcpy(rep->bnd, addrptr, addr_len);
 	memcpy(rep->bnd + addr_len, (void *)&port, sizeof(short));
 
-	len = sizeof(rep) + addr_len + 2;
+	len = sizeof(*rep) + addr_len + 2;
 	ln->text_len = 0;
 	if (add_data(sockfd, ln, "text", (void *)rep, len) == -1)
 		return -1;
 
+	pr_char(ln);
 	return 0;
 }
 
@@ -887,7 +880,7 @@ static int do_read(int sockfd, struct link *ln, const char *type)
 	} else if (strcmp(type, "cipher") == 0) {
 		buf = ln->cipher;
 		/* cipher read only accept text length data, or it
-		 * will overflow text buffer */
+		 * may overflow text buffer */
 		len = TEXT_BUF_SIZE;
 	} else {
 		sock_warn(sockfd, "%s: unknown type %s",

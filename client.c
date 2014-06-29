@@ -154,11 +154,11 @@ out:
 int client_do_pollin(int sockfd, struct link *ln)
 {
 	if (sockfd == ln->local_sockfd) {
-		if (ln->state & WAITING) {
-			sock_info(sockfd, "%s: waiting for server data",
-				  __func__);
-			goto out;
-		} else if (ln->state & PENDING) {
+		/* if (ln->state & WAITING) { */
+		/* 	sock_info(sockfd, "%s: waiting for server data", */
+		/* 		  __func__); */
+		/* 	goto out; */
+		if (ln->state & PENDING) {
 			sock_info(sockfd, "%s: pending when pollin",
 				  __func__);
 			goto out;
@@ -172,11 +172,11 @@ int client_do_pollin(int sockfd, struct link *ln)
 			goto out;
 		} else if (client_do_server_read(sockfd, ln) == -1) {
 			goto clean;
-		} else {
-			/* read okay, we can continue to read from
-			 * local */
-			ln->state &= ~WAITING;
-			goto out;
+		/* } else { */
+		/* 	/\* read okay, we can continue to read from */
+		/* 	 * local *\/ */
+		/* 	ln->state &= ~WAITING; */
+		/* 	goto out; */
 		}
 	}
 

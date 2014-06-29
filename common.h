@@ -118,6 +118,7 @@ void pr_link_warn(struct link *ln);
 void pr_iv(struct link *ln);
 void pr_key(struct link *ln);
 void pr_text(struct link *ln);
+void pr_char(struct link *ln);
 void pr_cipher(struct link *ln);
 void poll_init(void);
 int poll_set(int sockfd, short events);
