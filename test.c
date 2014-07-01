@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <openssl/bio.h>
 #include <openssl/rand.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -29,7 +30,7 @@ void usage_test(const char *name)
 
 int main(int argc, char **argv)
 {
-	int i, j;
+	int i;
 	int opt, sockfd, size;
 	int ret = 0;
 	bool udp = false;
@@ -120,14 +121,8 @@ int main(int argc, char **argv)
 		if (RAND_bytes((void *)result, 42) == -1)
 			pr_exit("RAND_bytes failed\n");
 
-		for (j = 0; j < 42; j++) {
-			if (j % 10 == 9)
-				printf("%02X\n", (unsigned char)result[j]);
-			else
-				printf("%02X ", (unsigned char)result[j]);
-		}
-
-		printf("%02X\n", result[j]);
+		pr_debug("random bytes:\n");
+		BIO_dump_fp(stdout, result, 42);
 	}
 		
 	size = send(sockfd, text, strlen(text) + 1, 0);
