@@ -226,7 +226,7 @@ int client_do_pollin(int sockfd, struct link *ln)
 out:
 	return 0;
 clean:
-	sock_info(sockfd, "%s close:", __func__);
+	sock_info(sockfd, "%s close", __func__);
 	destroy_link(ln);
 	return -1;
 }
@@ -304,7 +304,7 @@ int client_do_pollout(int sockfd, struct link *ln)
 out:
 	return 0;
 clean:
-	sock_info(sockfd, "%s: close:", __func__);
+	sock_info(sockfd, "%s: close", __func__);
 	destroy_link(ln);
 	return -1;
 }

@@ -269,8 +269,7 @@ void reaper(void)
 			value = TCP_CONNECT_TIMEOUT;
 
 		if (time_out(now, ln->time, value) == 0) {
-			pr_info("%s: timeout, closing\n", __func__);
-			pr_link_debug(ln);
+			pr_debug("%s: timeout, close\n", __func__);
 			destroy_link(ln);
 		}
 	}
@@ -415,6 +414,9 @@ static void free_link(struct link *ln)
 
 void destroy_link(struct link *ln)
 {
+	pr_debug("%s:\n", __func__);
+	pr_link_debug(ln);
+
 	unlink_link(ln);
 	poll_del(ln->local_sockfd);
 	poll_del(ln->server_sockfd);
