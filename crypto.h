@@ -9,6 +9,7 @@
 
 extern char passwd[MAX_KEY_LEN];
 extern char method[MAX_METHOD_NAME_LEN];
+extern int iv_len;
 
 int crypto_init(char *key, char *method);
 void crypto_exit(void);

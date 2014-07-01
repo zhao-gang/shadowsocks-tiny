@@ -68,6 +68,8 @@ int server_do_local_read(int sockfd, struct link *ln)
 		return 0;
 	}
 
+	/* if iv isn't received, wait to receive bigger than iv_len
+	 * bytes before go to next step */
 	if (ln->state & LOCAL_READ_PENDING) {
 		ret = do_read(sockfd, ln, "cipher", ln->cipher_len);
 		if (ret == -2) {
@@ -76,7 +78,7 @@ int server_do_local_read(int sockfd, struct link *ln)
 			return 0;
 		}
 
-		if (ln->cipher_len <= 16) {
+		if (ln->cipher_len <= iv_len) {
 			return 0;
 		} else {
 			ln->state &= ~SERVER_READ_PENDING;
@@ -89,9 +91,11 @@ int server_do_local_read(int sockfd, struct link *ln)
 			return 0;
 		}
 
-		if (ln->cipher_len <= 16) {
-			ln->state |= LOCAL_READ_PENDING;
-			return 0;
+		if (!(ln->state & SS_IV_RECEIVED)) {
+			if (ln->cipher_len <= iv_len) {
+				ln->state |= LOCAL_READ_PENDING;
+				return 0;
+			}
 		}
 	}
 

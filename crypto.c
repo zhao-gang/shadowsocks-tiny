@@ -11,9 +11,10 @@
 
 char passwd[MAX_KEY_LEN];
 char method[MAX_METHOD_NAME_LEN];
+int iv_len;
 static const EVP_CIPHER *evp_cipher;
 static const EVP_MD *md;
-static int iv_len, key_len;
+static int key_len;
 
 static const char supported_method[][MAX_METHOD_NAME_LEN] = {
 	"aes-128-cfb",
