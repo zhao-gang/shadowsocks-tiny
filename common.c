@@ -246,8 +246,8 @@ static int time_out(time_t this, time_t that, double value)
 void reaper(void)
 {
 	double value;
-	struct link *ln = link_head;
-	struct link *next = ln;
+	struct link *next = link_head;
+	struct link *ln;
 	time_t now = time(NULL);
 	static time_t checked = (time_t)-1;
 
@@ -366,17 +366,19 @@ static int unlink_link(struct link *ln)
 	if (head == NULL) {
 		pr_warn("%s: link list is empty\n", __func__);
 		return -1;
-	} else if (head->local_sockfd == ln->local_sockfd ||
-		   head->server_sockfd == ln->server_sockfd) {
-		link_head = head->next;
-		goto out;
 	} else {
-		head = head->next;
-
 		while (head) {
-			if (head->local_sockfd == ln->local_sockfd ||
-			    head->server_sockfd == ln->local_sockfd) {
+			if (head->local_sockfd == ln->local_sockfd &&
+			    head->server_sockfd == ln->server_sockfd) {
 				previous->next = head->next;
+
+				if (previous == head) {
+					/* the link we want to unlink
+				         * is link_head */
+					link_head = head->next;
+					goto out;
+				}
+
 				goto out;
 			}
 
