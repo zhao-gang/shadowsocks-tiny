@@ -17,9 +17,9 @@
 #define SS struct sockaddr_storage
 
 #define TCP_READ_TIMEOUT 15
-#define TCP_CONNECT_TIMEOUT 8
-#define MAX_CONNECTION 128
-#define TEXT_BUF_SIZE 32768
+#define TCP_CONNECT_TIMEOUT 15
+#define MAX_CONNECTION 32
+#define TEXT_BUF_SIZE 1024 * 64
 #define CIPHER_BUF_SIZE (TEXT_BUF_SIZE + EVP_MAX_BLOCK_LENGTH + \
 			     EVP_MAX_IV_LENGTH)
 
@@ -28,19 +28,30 @@
 enum link_state {
 	LOCAL = BITS(1),
 	SERVER = BITS(2),
-	TEXT_PENDING = BITS(3),
-	CIPHER_PENDING = BITS(4),
-	SOCKS5_AUTH_REQUEST_RECEIVED = BITS(5),
-	SOCKS5_AUTH_REPLY_SENT = BITS(6),
-	SOCKS5_CMD_REQUEST_RECEIVED = BITS(7),
-	SOCKS5_CMD_REPLY_SENT = BITS(8),
-	SS_TCP_HEADER_SENT = BITS(9),
-	SS_TCP_HEADER_RECEIVED = BITS(10),
-	SS_UDP = BITS(11),
+	LOCAL_READ_PENDING = BITS(3),
+	LOCAL_SEND_PENDING = BITS(4),
+	SERVER_READ_PENDING = BITS(5),
+	SERVER_SEND_PENDING = BITS(6),
+	SOCKS5_AUTH_REQUEST_RECEIVED = BITS(7),
+	SOCKS5_AUTH_REPLY_SENT = BITS(8),
+	SOCKS5_CMD_REQUEST_RECEIVED = BITS(9),
+	SOCKS5_CMD_REPLY_SENT = BITS(10),
+	SS_TCP_HEADER_SENT = BITS(11),
+	SS_TCP_HEADER_RECEIVED = BITS(12),
+	SS_IV_SENT = BITS(13),
+	SS_IV_RECEIVED = BITS(14),
+	SS_UDP = BITS(15),
+	/* link created by shadowsocks client, used to initialize
+	 * cipher in check_cipher() */
+	SS_CLIENT = BITS(16),
+	/* link created by shadowsocks server, used to initialize
+	 * cipher in check_cipher() */
+	SS_SERVER = BITS(17),
 };
 
 #define	LINKED (LOCAL | SERVER)
-#define PENDING (TEXT_PENDING | CIPHER_PENDING)
+#define LOCAL_PENDING (LOCAL_READ_PENDING | LOCAL_SEND_PENDING)
+#define SERVER_PENDING (SERVER_READ_PENDING | SERVER_SEND_PENDING)
 
 struct link {
 	enum link_state state;
@@ -50,15 +61,16 @@ struct link {
 	int text_len;
 	int cipher_len;
 	int ss_header_len;
-	const EVP_CIPHER *evp_cipher;
-	EVP_CIPHER_CTX *ctx;
+	EVP_CIPHER_CTX *local_ctx;
+	EVP_CIPHER_CTX *server_ctx;
 	struct addrinfo *server;
-	char *text;
-	char *cipher;
-	char *ss_header;
+	void *text;
+	void *cipher;
+	char local_iv[EVP_MAX_IV_LENGTH];
+	char local_key[EVP_MAX_KEY_LENGTH];
+	char server_iv[EVP_MAX_IV_LENGTH];
+	char server_key[EVP_MAX_KEY_LENGTH];
 	struct link *next;
-	char iv[EVP_MAX_IV_LENGTH];
-	char key[EVP_MAX_KEY_LENGTH];
 };
 
 #define SOCKS5_METHOD_NOT_REQUIRED 0x00
@@ -120,18 +132,14 @@ extern struct link *link_head;
 void pr_link_debug(struct link *ln);
 void pr_link_info(struct link *ln);
 void pr_link_warn(struct link *ln);
-void pr_iv(struct link *ln);
-void pr_key(struct link *ln);
-void pr_text(struct link *ln);
-void pr_char(struct link *ln);
-void pr_cipher(struct link *ln);
 void poll_init(void);
 int poll_set(int sockfd, short events);
 int poll_add(int sockfd, short events);
 int poll_rm(int sockfd, short events);
 int poll_del(int sockfd);
+int get_events(int sockfd);
 void reaper(void);
-struct link *create_link(int sockfd);
+struct link *create_link(int sockfd, const char *type);
 struct link *get_link(int sockfd);
 void destroy_link(struct link *ln);
 struct addrinfo *get_addr(struct link *ln);
@@ -143,12 +151,9 @@ int rm_data(int sockfd, struct link *ln, const char *type, int size);
 int check_ss_header(int sockfd, struct link *ln);
 int check_socks5_auth_header(int sockfd, struct link *ln);
 int check_socks5_cmd_header(int sockfd, struct link *ln);
-int add_ss_header(int sockfd, struct link *ln);
 int create_socks5_auth_reply(int sockfd, struct link *ln, bool ok);
 int create_socks5_cmd_reply(int sockfd, struct link *ln, int cmd);
-int do_text_read(int sockfd, struct link *ln);
-int do_cipher_read(int sockfd, struct link *ln);
-int do_text_send(int sockfd, struct link *ln);
-int do_cipher_send(int sockfd, struct link *ln);
+int do_read(int sockfd, struct link *ln, const char *type, int offset);
+int do_send(int sockfd, struct link *ln, const char *type, int offset);
 
 #endif

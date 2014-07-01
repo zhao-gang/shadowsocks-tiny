@@ -31,14 +31,9 @@ void usage_client(const char *name)
 	printf("\t-h,--help print this help\n");
 }
 
-/* read text from local, encrypt and send to server */
-int client_do_local_read(int sockfd, struct link *ln)
+int parse_socks5_proto(int sockfd, struct link *ln)
 {
 	int ret, cmd;
-
-	if (do_text_read(sockfd, ln) == -2) {
-		goto out;
-	}
 
 	if (!(ln->state & SOCKS5_AUTH_REQUEST_RECEIVED)) {
 		ln->state |= SOCKS5_AUTH_REQUEST_RECEIVED;
@@ -51,10 +46,11 @@ int client_do_local_read(int sockfd, struct link *ln)
 				goto out;
 		}
 
-		ret = do_text_send(sockfd, ln);
+		ret = do_send(sockfd, ln, "text", 0);
 		if (ret == -2) {
 			goto out;
 		} else if (ret == -1) {
+			ln->state |= LOCAL_SEND_PENDING;
 			return 0;
 		} else {
 			ln->state |= SOCKS5_AUTH_REPLY_SENT;
@@ -74,10 +70,11 @@ int client_do_local_read(int sockfd, struct link *ln)
 		}
 
 		/* cmd reply to local */
-		ret = do_text_send(sockfd, ln);
+		ret = do_send(sockfd, ln, "text", 0);
 		if (ret == -2 || cmd == SOCKS5_CMD_REP_FAILED) {
 			goto out;
 		} else if (ret == -1) {
+			ln->state |= LOCAL_SEND_PENDING;
 			return 0;
 		} else {
 			ln->state |= SOCKS5_CMD_REPLY_SENT;
@@ -85,8 +82,33 @@ int client_do_local_read(int sockfd, struct link *ln)
 		}
 	}
 
-	if (!(ln->state & SOCKS5_CMD_REPLY_SENT)) {
+	return 0;
+out:
+	return -1;
+}
+
+/* read text from local, encrypt and send to server */
+int client_do_local_read(int sockfd, struct link *ln)
+{
+	int ret;
+
+	if (ln->state & LOCAL_SEND_PENDING)
 		return 0;
+
+	ret = do_read(sockfd, ln, "text", 0);
+	if (ret == -2) {
+		goto out;
+	} else if (ret == -1) {
+		return 0;
+	}
+
+	if (!(ln->state & SOCKS5_CMD_REPLY_SENT)) {
+		if (parse_socks5_proto(sockfd, ln) == -1)
+			goto out;
+
+		if (ln->state & LOCAL_SEND_PENDING ||
+		    ln->text_len == 0)
+			return 0;
 	}
 
 	if (ln->state & SS_UDP) {
@@ -94,29 +116,25 @@ int client_do_local_read(int sockfd, struct link *ln)
 		if (rm_data(sockfd, ln, "text", 3) == -1)
 			goto out;
 	} else if (!(ln->state & SS_TCP_HEADER_SENT)) {
-		/* restore ss tcp header */
-		ln->text -= ln->ss_header_len;
-		ln->text_len += ln->ss_header_len;
+		if (add_data(sockfd, ln, "text",
+			     ln->cipher, ln->ss_header_len) == -1)
+			goto out;
 	}
 
 	if (encrypt(sockfd, ln) == -1)
 		goto out;
 
-	if (ln->state & SS_UDP) {
-		if (add_iv(sockfd, ln) == -1)
-			goto out;
-	} else if (!(ln->state & SS_TCP_HEADER_SENT)) {
-		if (add_iv(sockfd, ln) == -1)
-			goto out;
-
-		ln->state |= SS_TCP_HEADER_SENT;
+	ret = do_send(ln->server_sockfd, ln, "cipher", 0);
+	if (ret == -2) {
+		goto out;
+	} else if (ret == -1) {
+		ln->state |= SERVER_SEND_PENDING;
+	} else {
+		if (!(ln->state & SS_TCP_HEADER_SENT))
+			ln->state |= SS_TCP_HEADER_SENT;
 	}
 
-	if (do_cipher_send(ln->server_sockfd, ln) == -2)
-		goto out;
-
 	return 0;
-
 out:
 	return -1;
 }
@@ -124,12 +142,40 @@ out:
 /* read encrypt from server, decrypt and send to local */
 int client_do_server_read(int sockfd, struct link *ln)
 {
-	if (do_cipher_read(sockfd, ln) == -2)
-		goto out;
+	int ret;
 
-	if (ln->state & SS_UDP) {
-		if (receive_iv(sockfd, ln) == -1)
+	if (ln->state & SERVER_SEND_PENDING) {
+		return 0;
+	}
+
+	if (ln->state & SERVER_READ_PENDING) {
+		sock_debug(sockfd, "%s: server read pending", __func__);
+		pr_link_debug(ln);
+
+		ret = do_read(sockfd, ln, "cipher", ln->cipher_len);
+		if (ret == -2) {
 			goto out;
+		} else if (ret == -1) {
+			return 0;
+		}
+
+		if (ln->cipher_len <= 16) {
+			return 0;
+		} else {
+			ln->state &= ~SERVER_READ_PENDING;
+		}
+	} else {
+		ret = do_read(sockfd, ln, "cipher", 0);
+		if (ret == -2) {
+			goto out;
+		} else if (ret == -1) {
+			return 0;
+		}
+
+		if (ln->cipher_len <= 16) {
+			ln->state |= SERVER_READ_PENDING;
+			return 0;
+		}
 	}
 
 	if (decrypt(sockfd, ln) == -1)
@@ -141,11 +187,14 @@ int client_do_server_read(int sockfd, struct link *ln)
 			goto out;
 	}
 
-	if (do_text_send(ln->local_sockfd, ln) == -1)
+	ret = do_send(ln->local_sockfd, ln, "text", 0);
+	if (ret == -2) {
 		goto out;
+	} else if (ret == -1) {
+		ln->state |= LOCAL_SEND_PENDING;
+	}
 
 	return 0;
-
 out:
 	return -1;
 }
@@ -153,16 +202,16 @@ out:
 int client_do_pollin(int sockfd, struct link *ln)
 {
 	if (sockfd == ln->local_sockfd) {
-		if (ln->state & PENDING) {
-			sock_info(sockfd, "%s: pending when pollin",
+		if (ln->state & SERVER_PENDING) {
+			sock_info(sockfd, "%s: server pending",
 				  __func__);
 			goto out;
 		} else if (client_do_local_read(sockfd, ln) == -1) {
 			goto clean;
 		}
 	} else if (sockfd == ln->server_sockfd) {
-		if (ln->state & PENDING) {
-			sock_info(sockfd, "%s: pending when pollin",
+		if (ln->state & LOCAL_PENDING) {
+			sock_info(sockfd, "%s: local pending",
 				  __func__);
 			goto out;
 		} else if (client_do_server_read(sockfd, ln) == -1) {
@@ -173,7 +222,7 @@ int client_do_pollin(int sockfd, struct link *ln)
 out:
 	return 0;
 clean:
-	sock_info(sockfd, "%s: closed", __func__);
+	sock_info(sockfd, "%s close:", __func__);
 	destroy_link(ln);
 	return -1;
 }
@@ -185,47 +234,29 @@ int client_do_pollout(int sockfd, struct link *ln)
 
 	/* write to local */
 	if (sockfd == ln->local_sockfd) {
-		if (ln->state & SOCKS5_AUTH_REQUEST_RECEIVED &&
-		    !(ln->state & SOCKS5_AUTH_REPLY_SENT)) {
-			ret = do_text_send(sockfd, ln);
+		if (ln->state & LOCAL_SEND_PENDING) {
+			ret = do_send(sockfd, ln, "text", 0);
 			if (ret == -2) {
 				goto clean;
 			} else if (ret == -1) {
 				goto out;
 			} else {
-				ln->state |= SOCKS5_AUTH_REPLY_SENT;
-				goto out;
+				ln->state &= ~LOCAL_SEND_PENDING;
 			}
-		}
 
-		if (ln->state & SOCKS5_CMD_REQUEST_RECEIVED &&
-		    !(ln->state & SOCKS5_CMD_REPLY_SENT) &&
-		    ln->state & CIPHER_PENDING) {
-			ret = do_text_send(sockfd, ln);
-			if (ret == -2) {
-				goto clean;
-			} else if (ret == -1) {
-				goto out;
-			} else {
-				ln->state |= SOCKS5_CMD_REPLY_SENT;
-				goto out;
-			}
-		}
+			/* update socks5 state */
+			if (!(ln->state & SOCKS5_AUTH_REPLY_SENT))
+				ln->state &= SOCKS5_AUTH_REPLY_SENT;
+			else if (!(ln->state & SOCKS5_CMD_REPLY_SENT))
+				ln->state &= SOCKS5_CMD_REPLY_SENT;
 
-		if (ln->state & TEXT_PENDING) {
-			ret = do_text_send(sockfd, ln);
-			if (ret == -2) {
-				goto clean;
-			} else {
-				goto out;
-			}
+			goto out;
 		} else {
 			poll_rm(sockfd, POLLOUT);
 		}
 	} else if (sockfd == ln->server_sockfd) {
 		/* pending connect finished */
 		if (!(ln->state & SERVER)) {
-			ln->time = time(NULL);
 			if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR,
 				       &optval, (void *)&optlen) == -1) {
 				sock_warn(sockfd, "%s: getsockopt() %s",
@@ -237,6 +268,7 @@ int client_do_pollout(int sockfd, struct link *ln)
 				sock_info(sockfd,
 					  "%s: pending connect() finished",
 					  __func__);
+				ln->time = time(NULL);
 				ln->state |= SERVER;
 			} else {
 				sock_warn(sockfd,
@@ -246,11 +278,18 @@ int client_do_pollout(int sockfd, struct link *ln)
 			}
 		}
 
-		if (ln->state & CIPHER_PENDING) {
+		if (ln->state & SERVER_SEND_PENDING) {
 			/* write to server */
-			if (do_cipher_send(sockfd, ln) == -2) {
+			ret = do_send(sockfd, ln, "cipher", 0);
+			if (ret == -2) {
 				goto clean;
+			} else if (ret == -1) {
+				goto out;
 			} else {
+				ln->state &= ~SERVER_SEND_PENDING;
+
+				if (!(ln->state & SS_TCP_HEADER_SENT))
+					ln->state |= SS_TCP_HEADER_SENT;
 				goto out;
 			}
 		} else {
@@ -261,7 +300,7 @@ int client_do_pollout(int sockfd, struct link *ln)
 out:
 	return 0;
 clean:
-	sock_info(sockfd, "%s: closed", __func__);
+	sock_info(sockfd, "%s: close:", __func__);
 	destroy_link(ln);
 	return -1;
 }
@@ -269,7 +308,7 @@ clean:
 int main(int argc, char **argv)
 {
 	short revents;
-	int i, opt, sockfd, listenfd;
+	int i, listenfd, opt, sockfd;
 	int ret = 0;
 	char *server = NULL;
 	char *local = NULL;
@@ -334,32 +373,32 @@ int main(int argc, char **argv)
 		ret = getaddrinfo(server, s_port, NULL, &s_info);
 		if (ret != 0) {
 			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
-			goto out_addrinfo;
+			goto out;
 		}
 		pr_ai_info(s_info, "server addrinfo");
 	} else {
 		pr_warn("Either server addr or server port is not specified\n");
 		usage_client(argv[0]);
 		ret = -1;
-		goto out_addrinfo;
+		goto out;
 	}
 
 	if (local && l_port) {
 		ret = getaddrinfo(local, l_port, NULL, &l_info);
 		if (ret != 0) {
 			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
-			goto out_addrinfo;
+			goto out;
 		}
 	} else {
 		pr_warn("Either local addr or local port is not specified\n");
 		usage_client(argv[0]);
 		ret = -1;
-		goto out_addrinfo;
+		goto out;
 	}
 
 	if (crypto_init(passwd, method) == -1) {
 		ret = -1;
-		goto out_addrinfo;
+		goto out;
 	}
 
 	poll_init();
@@ -368,6 +407,7 @@ int main(int argc, char **argv)
 	clients[0].events = POLLIN;
 
 	while (1) {
+		pr_debug("start polling\n");
 		ret = poll(clients, nfds, TCP_READ_TIMEOUT * 1000);
 		if (ret == -1)
 			err_exit("poll error");
@@ -377,21 +417,18 @@ int main(int argc, char **argv)
 		}
 
 		if (clients[0].revents & POLLIN) {
-			sockfd = accept(listenfd, NULL, NULL);
+			sockfd = accept(clients[0].fd, NULL, NULL);
 			if (sockfd == -1) {
 				pr_warn("accept error\n");
+			} else if (poll_set(sockfd, POLLIN) == -1) {
+					close(sockfd);
 			} else {
-				sock_info(sockfd, "accept");
-				if (poll_set(sockfd, POLLIN) == -1) {
+				ln = create_link(sockfd, "client");
+				if (ln == NULL) {
+					poll_del(sockfd);
 					close(sockfd);
 				} else {
-					ln = create_link(sockfd);
-					if (ln == NULL) {
-						poll_del(sockfd);
-						close(sockfd);
-					} else {
-						ln->server = s_info;
-					}
+					ln->server = s_info;
 				}
 			}
 		}
@@ -434,8 +471,8 @@ int main(int argc, char **argv)
 		reaper();
 	}
 
+out:
 	crypto_exit();
-out_addrinfo:
 	if (s_info)
 		freeaddrinfo(s_info);
 	if (l_info)

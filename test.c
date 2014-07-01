@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <openssl/rand.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/types.h>
@@ -11,6 +12,7 @@
 #include <unistd.h>
 
 #include "common.h"
+#include "crypto.h"
 #include "log.h"
 
 void usage_test(const char *name)
@@ -27,6 +29,7 @@ void usage_test(const char *name)
 
 int main(int argc, char **argv)
 {
+	int i, j;
 	int opt, sockfd, size;
 	int ret = 0;
 	bool udp = false;
@@ -113,6 +116,20 @@ int main(int argc, char **argv)
 		       ntohs(((struct sockaddr_in *)&ss)->sin_port));
 	}
 
+	for (i = 0; i < 10; i++) {
+		if (RAND_bytes((void *)result, 42) == -1)
+			pr_exit("RAND_bytes failed\n");
+
+		for (j = 0; j < 42; j++) {
+			if (j % 10 == 9)
+				printf("%02X\n", (unsigned char)result[j]);
+			else
+				printf("%02X ", (unsigned char)result[j]);
+		}
+
+		printf("%02X\n", result[j]);
+	}
+		
 	size = send(sockfd, text, strlen(text) + 1, 0);
 	if (size == -1)
 		err_exit("send");

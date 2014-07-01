@@ -1,17 +1,21 @@
+#include <string.h>
+#include <netdb.h>
+#include <openssl/bio.h>
 #include <openssl/conf.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
-#include <string.h>
-#include <netdb.h>
 
 #include "common.h"
 #include "crypto.h"
 
 char passwd[MAX_KEY_LEN];
 char method[MAX_METHOD_NAME_LEN];
+static const EVP_CIPHER *evp_cipher;
+static const EVP_MD *md;
+static int iv_len, key_len;
 
-const char supported_method[][MAX_METHOD_NAME_LEN] = {
+static const char supported_method[][MAX_METHOD_NAME_LEN] = {
 	"aes-128-cfb",
 	"aes-192-cfb",
 	"aes-256-cfb",
@@ -30,25 +34,31 @@ const char supported_method[][MAX_METHOD_NAME_LEN] = {
 
 int get_method(char *passwd, char *method)
 {
-	int i = 0;
-	int len = sizeof(supported_method) / MAX_METHOD_NAME_LEN;
+	md = EVP_get_digestbyname("MD5");
+	if (md == NULL)
+		goto err;
 
-	while (i < len)
-		if (strcmp(method, supported_method[i++]) == 0)
-			return 0;
+	evp_cipher = EVP_get_cipherbyname(method);
+	if (evp_cipher == NULL)
+		goto err;
 
-	pr_warn("method %s is not supported\n", method);
+	key_len = EVP_CIPHER_key_length(evp_cipher);
+	iv_len = EVP_CIPHER_iv_length(evp_cipher);
+
+	return 0;
+err:
+	pr_warn("%s: method %s is not supported\n", __func__, method);
 	return -1;
 }
 
 int crypto_init(char *passwd, char *method)
 {
-	if (get_method(passwd, method) == -1)
-		return -1;
-
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
 	OPENSSL_config(NULL);
+
+	if (get_method(passwd, method) == -1)
+		return -1;
 
 	return 0;
 }
@@ -62,109 +72,171 @@ void crypto_exit(void)
 int add_iv(int sockfd, struct link *ln)
 {
 	int ret;
-	int iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
+	char *iv_p;
 
-	ret = add_data(sockfd, ln, "cipher", ln->iv, iv_len);
-	if (ret != 0) {
-		sock_warn(sockfd, "%s failed", __func__);
-	}
+	if (sockfd == ln->local_sockfd)
+		iv_p = ln->local_iv;
+	else if (sockfd == ln->server_sockfd)
+		iv_p = ln->server_iv;
+	else
+		goto err;
 
-	return ret;
+	ret = add_data(sockfd, ln, "cipher", iv_p, iv_len);
+	if (ret != 0)
+		goto err;
+
+	ln->state |= SS_IV_SENT;
+	sock_debug(sockfd, "%s:", __func__);
+	pr_link_debug(ln);
+
+	return 0;
+err:
+	sock_warn(sockfd, "%s failed", __func__);
+	return -1;
 }
 
-/* iv is in the first iv_len byptes of received buf */
+/* iv is in the first iv_len byptes of ss tcp/udp header */
 int receive_iv(int sockfd, struct link *ln)
 {
 	int ret;
-	int iv_len;
+	char *iv_p;
 
-	if (!ln->evp_cipher) {
-		ln->evp_cipher = EVP_get_cipherbyname(method);
-		if (!ln->evp_cipher)
-			return -1;
-	}
+	if (sockfd == ln->local_sockfd)
+		iv_p = ln->local_iv;
+	else if (sockfd == ln->server_sockfd)
+		iv_p = ln->server_iv;
+	else
+		goto err;
 
-	iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
-	memcpy(ln->iv, ln->cipher, iv_len);
-	ln->iv[iv_len] = '\0';
+	memcpy(iv_p, ln->cipher, iv_len);
+	iv_p[iv_len] = '\0';
+
 	ret = rm_data(sockfd, ln, "cipher", iv_len);
-	if (ret != 0) {
-		sock_warn(sockfd, "%s failed", __func__);
-	}
-
-	return ret;
-}
-
-int create_cipher(struct link *ln, bool iv)
-{
-	const EVP_MD *md;
-	int key_len, iv_len;
-
-	md = EVP_get_digestbyname("MD5");
-	if (md == NULL)
+	if (ret != 0)
 		goto err;
 
-	if (!ln->evp_cipher) {
-		ln->evp_cipher = EVP_get_cipherbyname(method);
-		if (ln->evp_cipher == NULL)
-			goto err;
-	}
-
-	key_len = EVP_CIPHER_key_length(ln->evp_cipher);
-	iv_len = EVP_CIPHER_iv_length(ln->evp_cipher);
-
-	if (!iv) {
-		if (RAND_bytes((void *)ln->iv, iv_len) == -1)
-			goto err;
-
-		ln->iv[iv_len] = '\0';
-	}
-
-	if (EVP_BytesToKey(ln->evp_cipher, md, NULL,
-			   (void *)passwd, strlen(passwd), 1,
-			   (void *)ln->key, (void *)ln->iv) == 0)
-		goto err;
-
-	ln->key[key_len] = '\0';
-
-	ln->ctx = EVP_CIPHER_CTX_new();
-	if (ln == NULL)
-		goto err;
+	ln->state |= SS_IV_RECEIVED;
+	sock_debug(sockfd, "%s:", __func__);
+	pr_link_debug(ln);
 
 	return 0;
-
 err:
-	ERR_print_errors_fp(stderr);
-	pr_warn("%s failed\n", __func__);
+	sock_warn(sockfd, "%s failed", __func__);
+	return -1;
+}
+
+int check_cipher(int sockfd, struct link *ln)
+{
+	int ret;
+	char *iv_p;
+	char *key_p;
+	EVP_CIPHER_CTX *ctx_p;
+
+	if (sockfd == ln->local_sockfd) {
+		iv_p = ln->local_iv;
+		key_p = ln->local_key;
+		ctx_p = ln->local_ctx;
+	} else if (sockfd == ln->server_sockfd) {
+		iv_p = ln->server_iv;
+		key_p = ln->server_key;
+		ctx_p = ln->server_ctx;
+	} else {
+		goto err;
+	}
+
+	if (strlen(iv_p) == 0) {
+		if (RAND_bytes((void *)iv_p, iv_len) == -1)
+			goto err;
+
+		iv_p[iv_len] = '\0';
+	}
+
+	if (strlen(key_p) == 0) {
+		ret = EVP_BytesToKey(evp_cipher, md, NULL,
+				     (void *)passwd, strlen(passwd), 1,
+				     (void *)key_p, (void *)iv_p);
+		if (ret == 0)
+			goto err;
+
+		key_p[key_len] = '\0';
+
+		/* key length is zero also means the cipher isn't
+		 * initialized, we now have all the info to initialize
+		 * the cipher */
+		if (ln->state & SS_CLIENT) {
+			if (sockfd == ln->local_sockfd)
+				ret = EVP_EncryptInit_ex(ctx_p, evp_cipher,
+							 NULL, (void *)key_p,
+							 (void *)iv_p);
+			else if (sockfd == ln->server_sockfd)
+				ret = EVP_DecryptInit_ex(ctx_p, evp_cipher,
+							 NULL, (void *)key_p,
+							 (void *)iv_p);
+
+			if (ret != 1)
+				goto err;
+		} else if (ln->state & SS_SERVER) {
+			if (sockfd == ln->local_sockfd)
+				ret = EVP_DecryptInit_ex(ctx_p, evp_cipher,
+							 NULL, (void *)key_p,
+							 (void *)iv_p);
+			else if (sockfd == ln->server_sockfd)
+				ret = EVP_EncryptInit_ex(ctx_p, evp_cipher,
+							 NULL, (void *)key_p,
+							 (void *)iv_p);
+
+			if (ret != 1)
+				goto err;
+		}
+	}
+
+	return 0;
+err:
+	sock_warn(sockfd, "%s failed", __func__);
 	return -1;
 }
 
 int encrypt(int sockfd, struct link *ln)
 {
 	int len, cipher_len;
+	EVP_CIPHER_CTX *ctx_p;
 
-	if (ln->evp_cipher == NULL)
-		if (create_cipher(ln, false) == -1)
-			goto err;
-
-	if (EVP_EncryptInit_ex(ln->ctx, ln->evp_cipher, NULL,
-			       (void *)ln->key, (void *)ln->iv) != 1)
+	if (check_cipher(sockfd, ln) == -1)
 		goto err;
 
-	if (EVP_EncryptUpdate(ln->ctx, (void *)ln->cipher, &len,
-			      (void *)ln->text, ln->text_len) != 1)
+	if (sockfd == ln->local_sockfd) {
+		ctx_p = ln->local_ctx;
+	} else if (sockfd == ln->server_sockfd) {
+		ctx_p = ln->server_ctx;
+	} else {
+		goto err;
+	}
+
+	sock_debug(sockfd, "%s: before encrypt", __func__);
+	pr_link_debug(ln);
+
+	if (EVP_EncryptUpdate(ctx_p, ln->cipher, &len,
+			      ln->text, ln->text_len) != 1)
 		goto err;
 
 	cipher_len = len;
 
-	if (EVP_EncryptFinal_ex(ln->ctx, (void *)(ln->cipher + len), &len) != 1)
+	if (EVP_EncryptFinal_ex(ctx_p, ln->cipher + len, &len) != 1)
 		goto err;
 
 	cipher_len += len;
 	ln->cipher_len = cipher_len;
 
-	return cipher_len;
+	if (!(ln->state & SS_IV_SENT))
+		if (add_iv(sockfd, ln) == -1)
+			goto err;
 
+	/* encryption succeeded, so text buffer is not needed */
+	ln->text_len = 0;
+	sock_debug(sockfd, "%s: after encrypt", __func__);
+	pr_link_debug(ln);
+
+	return ln->cipher_len;
 err:
 	ERR_print_errors_fp(stderr);
 	pr_link_warn(ln);
@@ -175,32 +247,46 @@ err:
 int decrypt(int sockfd, struct link *ln)
 {
 	int len, text_len;
+	EVP_CIPHER_CTX *ctx_p;
 
-	if (ln->ctx == NULL)
-		if (create_cipher(ln, true) == -1)
+	if (!(ln->state & SS_IV_RECEIVED))
+		if (receive_iv(sockfd, ln) == -1)
 			goto err;
 
-	if (EVP_DecryptInit_ex(ln->ctx, ln->evp_cipher, NULL,
-			       (void *)ln->key, (void *)ln->iv) != 1) {
+	if (check_cipher(sockfd, ln) == -1)
+		goto err;
+
+	if (sockfd == ln->local_sockfd) {
+		ctx_p = ln->local_ctx;
+	} else if (sockfd == ln->server_sockfd) {
+		ctx_p = ln->server_ctx;
+	} else {
 		goto err;
 	}
 
-	if (EVP_DecryptUpdate(ln->ctx, (void *)ln->text, &len,
-			      (void *)ln->cipher, ln->cipher_len) != 1) {
+	sock_debug(sockfd, "%s: before decrypt", __func__);
+	pr_link_debug(ln);
+
+	if (EVP_DecryptUpdate(ctx_p, ln->text, &len,
+			      ln->cipher, ln->cipher_len) != 1) {
 		goto err;
 	}
 
 	text_len = len;
 
-	if (EVP_DecryptFinal_ex(ln->ctx, (void *)(ln->cipher + len), &len) != 1) {
+	if (EVP_DecryptFinal_ex(ctx_p, ln->cipher + len, &len) != 1) {
 		goto err;
 	}
 
 	text_len += len;
 	ln->text_len = text_len;
+	/* decryption succeeded, so cipher buffer is not needed */
+	ln->cipher_len = 0;
+
+	sock_debug(sockfd, "%s: after decrypt", __func__);
+	pr_link_debug(ln);
 
 	return text_len;
-
 err:
 	ERR_print_errors_fp(stderr);
 	pr_link_warn(ln);
