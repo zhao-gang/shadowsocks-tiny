@@ -353,6 +353,7 @@ int main(int argc, char **argv)
 			if (ln == NULL) {
 				sock_warn(sockfd, "close: can't get link");
 				close(sockfd);
+				continue;
 			}
 
 			if (revents & POLLIN) {

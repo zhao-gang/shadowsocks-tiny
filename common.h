@@ -17,9 +17,9 @@
 #define SS struct sockaddr_storage
 
 #define TCP_READ_TIMEOUT 15
-#define TCP_CONNECT_TIMEOUT 15
-#define MAX_CONNECTION 32
-#define TEXT_BUF_SIZE 1024 * 64
+#define TCP_CONNECT_TIMEOUT 8
+#define MAX_CONNECTION 64
+#define TEXT_BUF_SIZE 1024 * 32
 #define CIPHER_BUF_SIZE (TEXT_BUF_SIZE + EVP_MAX_BLOCK_LENGTH + \
 			     EVP_MAX_IV_LENGTH)
 

@@ -198,7 +198,7 @@ int poll_del(int sockfd)
 {
 	int i;
 
-	for (i = 0; i < nfds; i++) {
+	for (i = 1; i < nfds; i++) {
 		if (clients[i].fd == sockfd) {
 			clients[i].fd = -1;
 			return 0;
@@ -402,6 +402,12 @@ static void free_link(struct link *ln)
 
 	if (ln->cipher)
 		free(ln->cipher);
+
+	if (ln->local_ctx)
+		EVP_CIPHER_CTX_free(ln->local_ctx);
+
+	if (ln->server_ctx)
+		EVP_CIPHER_CTX_free(ln->server_ctx);
 
 	if (ln)
 		free(ln);
@@ -884,7 +890,9 @@ int do_read(int sockfd, struct link *ln, const char *type, int offset)
 		len = TEXT_BUF_SIZE - offset;
 	} else if (strcmp(type, "cipher") == 0) {
 		buf = ln->cipher + offset;
-		len = CIPHER_BUF_SIZE - offset;
+		/* cipher read only accept text buffer length data, or
+		 * it may overflow text buffer */
+		len = TEXT_BUF_SIZE - offset;
 	} else {
 		sock_warn(sockfd, "%s: unknown type %s",
 			  __func__, type);
@@ -961,8 +969,9 @@ int do_send(int sockfd, struct link *ln, const char *type, int offset)
 	if (rm_data(sockfd, ln, type, ret) == -1)
 		return -2;
 
-	sock_debug(sockfd, "%s(%s): send %d bytes",
-		  __func__, type, ret);
+	sock_debug(sockfd, "%s(%s): offset = %d, buf_len = %d, send %d bytes",
+		   __func__, type, offset, len, ret);
+	pr_link_debug(ln);
 
 	if (ret != len) {
 		poll_add(sockfd, POLLOUT);
