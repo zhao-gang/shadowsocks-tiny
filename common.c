@@ -971,8 +971,8 @@ int do_send(int sockfd, struct link *ln, const char *type, int offset)
 	if (rm_data(sockfd, ln, type, ret) == -1)
 		return -2;
 
-	sock_debug(sockfd, "%s(%s): offset = %d, buf_len = %d, send %d bytes",
-		   __func__, type, offset, len, ret);
+	sock_debug(sockfd, "%s(%s): offset = %d, send %d bytes",
+		   __func__, type, offset, ret);
 	pr_link_debug(ln);
 
 	if (ret != len) {
