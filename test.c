@@ -121,7 +121,7 @@ int main(int argc, char **argv)
 		if (RAND_bytes((void *)result, 42) == -1)
 			pr_exit("RAND_bytes failed\n");
 
-		pr_debug("random bytes:\n");
+		pr_info("random bytes:\n");
 		BIO_dump_fp(stdout, result, 42);
 	}
 		
@@ -129,7 +129,7 @@ int main(int argc, char **argv)
 	if (size == -1)
 		err_exit("send");
 
-	pr_debug("send: %s, len: %d\n", text, size);
+	pr_info("send: %s, len: %d\n", text, size);
 
 	size = recv(sockfd, result, 2048, 0);
 	if (size == -1)
@@ -137,7 +137,7 @@ int main(int argc, char **argv)
 
 	result[size] = '\0';
 
-	pr_debug("received: %s, len: %d\n", result, size);
+	pr_info("received: %s, len: %d\n", result, size);
 
 	while (1)
 		;

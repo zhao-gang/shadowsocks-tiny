@@ -269,7 +269,7 @@ void reaper(void)
 			value = TCP_CONNECT_TIMEOUT;
 
 		if (time_out(now, ln->time, value) == 0) {
-			pr_debug("%s: timeout, close\n", __func__);
+			pr_info("%s: timeout, close\n", __func__);
 			destroy_link(ln);
 		}
 	}
@@ -414,8 +414,8 @@ static void free_link(struct link *ln)
 
 void destroy_link(struct link *ln)
 {
-	pr_debug("%s:\n", __func__);
-	pr_link_debug(ln);
+	pr_info("%s:\n", __func__);
+	pr_link_info(ln);
 
 	unlink_link(ln);
 	poll_del(ln->local_sockfd);
@@ -927,9 +927,9 @@ int do_read(int sockfd, struct link *ln, const char *type, int offset)
 		ln->cipher_len = ret + offset;
 	}
 
-	sock_debug(sockfd, "%s(%s): offset = %d, buf_len = %d, recv %d bytes",
+	sock_info(sockfd, "%s(%s): offset = %d, buf_len = %d, recv %d bytes",
 		   __func__, type, offset, len, ret);
-	pr_link_debug(ln);
+	pr_link_info(ln);
 
 	return ret;
 }
@@ -971,9 +971,9 @@ int do_send(int sockfd, struct link *ln, const char *type, int offset)
 	if (rm_data(sockfd, ln, type, ret) == -1)
 		return -2;
 
-	sock_debug(sockfd, "%s(%s): offset = %d, send %d bytes",
+	sock_info(sockfd, "%s(%s): offset = %d, send %d bytes",
 		   __func__, type, offset, ret);
-	pr_link_debug(ln);
+	pr_link_info(ln);
 
 	if (ret != len) {
 		poll_add(sockfd, POLLOUT);

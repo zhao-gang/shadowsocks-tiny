@@ -151,8 +151,8 @@ int client_do_server_read(int sockfd, struct link *ln)
 	/* if iv isn't received, wait to receive bigger than iv_len
 	 * bytes before go to next step */
 	if (ln->state & SERVER_READ_PENDING) {
-		sock_debug(sockfd, "%s: server read pending", __func__);
-		pr_link_debug(ln);
+		sock_info(sockfd, "%s: server read pending", __func__);
+		pr_link_info(ln);
 
 		ret = do_read(sockfd, ln, "cipher", ln->cipher_len);
 		if (ret == -2) {
@@ -411,7 +411,7 @@ int main(int argc, char **argv)
 	clients[0].events = POLLIN;
 
 	while (1) {
-		pr_debug("start polling\n");
+		pr_info("start polling\n");
 		ret = poll(clients, nfds, TCP_READ_TIMEOUT * 1000);
 		if (ret == -1)
 			err_exit("poll error");
