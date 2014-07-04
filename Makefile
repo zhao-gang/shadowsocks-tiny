@@ -3,24 +3,20 @@ CFLAGS += -g -Wall
 .PHONY: all
 all: sslocal sserver test
 
-sslocal : client.c common.c crypto.c log.c
+sslocal : client.c common.o crypto.o log.o
 	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
 
-sserver : server.c common.c crypto.c log.c
+sserver : server.c common.o crypto.o log.o
 	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
 
-test: test.c common.c crypto.c log.c
+test: test.c common.o crypto.o log.o
 	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
 
-client.c: common.c crypto.c
+common.o: common.h
 
-common.c: common.h log.c
+crypto.o: crypto.h
 
-crypto.c: crypto.h common.c
-
-log.c: log.h
-
-server.c: common.c crypto.c
+log.o: log.h
 
 .PHONY: clean
 clean:
