@@ -139,7 +139,7 @@ out:
 	return -1;
 }
 
-/* read encrypt from server, decrypt and send to local */
+/* read cipher from server, decrypt and send to local */
 int client_do_server_read(int sockfd, struct link *ln)
 {
 	int ret;
