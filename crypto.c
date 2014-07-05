@@ -120,8 +120,6 @@ int receive_iv(int sockfd, struct link *ln)
 		goto err;
 
 	memcpy(iv_p, ln->cipher, iv_len);
-	iv_p[iv_len] = '\0';
-
 	ret = rm_data(sockfd, ln, "cipher", iv_len);
 	if (ret != 0)
 		goto err;
