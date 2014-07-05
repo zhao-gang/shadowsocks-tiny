@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 	clients[1].events = POLLIN;
 
 	while (1) {
-		pr_info("start polling\n");
+		pr_debug("start polling\n");
 		ret = poll(clients, nfds, TCP_INACTIVE_TIMEOUT * 1000);
 		if (ret == -1) {
 			err_exit("poll error");

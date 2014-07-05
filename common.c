@@ -21,11 +21,11 @@ struct link *link_head;
 
 void pr_data(FILE *fp, const char *name, char *data, int len)
 {
-       if (!debug)
-               return;
+	if (!debug)
+		return;
 
-       fprintf(fp, "%s:\n", name);
-       BIO_dump_fp(fp, (void *)data, len);
+	fprintf(fp, "%s:\n", name);
+	BIO_dump_fp(fp, (void *)data, len);
 }
 
 void _pr_link(const char *level, struct link *ln)
@@ -279,12 +279,12 @@ void reaper(void)
 
 		if (time_out(now, ln->time, value) == 0) {
 			if (value == TCP_CONNECT_TIMEOUT)
-				pr_info("%s: connect timeout, close\n",
-					__func__);
+				pr_debug("%s: connect timeout, close\n",
+					 __func__);
 
 			if (value == TCP_INACTIVE_TIMEOUT)
-				pr_info("%s: inactive timeout, close\n",
-					__func__);
+				pr_debug("%s: inactive timeout, close\n",
+					 __func__);
 
 			destroy_link(ln);
 		}
@@ -423,8 +423,8 @@ static void free_link(struct link *ln)
 
 void destroy_link(struct link *ln)
 {
-	pr_info("%s:\n", __func__);
-	pr_link_info(ln);
+	pr_debug("%s:\n", __func__);
+	pr_link_debug(ln);
 
 	unlink_link(ln);
 	poll_del(ln->local_sockfd);
@@ -918,7 +918,7 @@ int do_read(int sockfd, struct link *ln, const char *type, int offset)
 	ret = recv(sockfd, buf, len, 0);
 	if (ret == -1) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
-			sock_warn(sockfd, "%s(%s): recv() %s",
+			sock_info(sockfd, "%s(%s): recv() %s",
 				  __func__, type, strerror(errno));
 			return -2;
 		}
@@ -928,8 +928,8 @@ int do_read(int sockfd, struct link *ln, const char *type, int offset)
 	} else if (ret == 0) {
 		/* recv() returned 0 means the peer has shut down,
 		 * return -2 to let the caller do the closing work */
-		sock_info(sockfd, "%s(%s): the peer has shut down",
-			  __func__, type);
+		sock_debug(sockfd, "%s(%s): the peer has shut down",
+			   __func__, type);
 		return -2;
 	}
 
@@ -940,9 +940,9 @@ int do_read(int sockfd, struct link *ln, const char *type, int offset)
 	}
 
 	ln->time = time(NULL);
-	sock_info(sockfd, "%s(%s): recv(%d), offset(%d)",
-		  __func__, type, ret, offset);
-	pr_link_info(ln);
+	sock_debug(sockfd, "%s(%s): recv(%d), offset(%d)",
+		   __func__, type, ret, offset);
+	pr_link_debug(ln);
 
 	return ret;
 }
@@ -986,15 +986,15 @@ int do_send(int sockfd, struct link *ln, const char *type, int offset)
 
 	if (ret != len) {
 		poll_add(sockfd, POLLOUT);
-		sock_info(sockfd, "%s(%s): send() partial send(%d/%d)",
-			  __func__, type, ret, len);
+		sock_debug(sockfd, "%s(%s): send() partial send(%d/%d)",
+			   __func__, type, ret, len);
 		return -1;
 	}
 		
 	poll_set(sockfd, POLLIN);
-	sock_info(sockfd, "%s(%s): send(%d), offset(%d)",
-		  __func__, type, ret, offset);
-	pr_link_info(ln);
+	sock_debug(sockfd, "%s(%s): send(%d), offset(%d)",
+		   __func__, type, ret, offset);
+	pr_link_debug(ln);
 
 	return ret;
 }
