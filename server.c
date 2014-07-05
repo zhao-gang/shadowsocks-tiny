@@ -309,7 +309,7 @@ int main(int argc, char **argv)
 
 	while (1) {
 		pr_info("start polling\n");
-		ret = poll(clients, nfds, TCP_READ_TIMEOUT * 1000);
+		ret = poll(clients, nfds, TCP_INACTIVE_TIMEOUT * 1000);
 		if (ret == -1) {
 			err_exit("poll error");
 		} else if (ret == 0) {

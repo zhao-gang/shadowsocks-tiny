@@ -262,7 +262,7 @@ void reaper(void)
 
 	if (checked == (time_t)-1) {
 		checked = now;
-	} else if (time_out(now, checked, TCP_READ_TIMEOUT) == -1) {
+	} else if (time_out(now, checked, TCP_INACTIVE_TIMEOUT) == -1) {
 		return;
 	} else {
 		checked = now;
@@ -273,12 +273,19 @@ void reaper(void)
 		next = ln->next;
 
 		if (ln->state & SERVER)
-			value = TCP_READ_TIMEOUT;
+			value = TCP_INACTIVE_TIMEOUT;
 		else
 			value = TCP_CONNECT_TIMEOUT;
 
 		if (time_out(now, ln->time, value) == 0) {
-			pr_info("%s: timeout, close\n", __func__);
+			if (value == TCP_CONNECT_TIMEOUT)
+				pr_info("%s: connect timeout, close\n",
+					__func__);
+
+			if (value == TCP_INACTIVE_TIMEOUT)
+				pr_info("%s: inactive timeout, close\n",
+					__func__);
+
 			destroy_link(ln);
 		}
 	}

@@ -16,10 +16,10 @@
 #define SA_IN6 struct sockaddr_in6
 #define SS struct sockaddr_storage
 
-#define TCP_READ_TIMEOUT 15
-#define TCP_CONNECT_TIMEOUT 8
-#define MAX_CONNECTION 64
-#define TEXT_BUF_SIZE (1024 * 32)
+#define TCP_INACTIVE_TIMEOUT 120
+#define TCP_CONNECT_TIMEOUT 15
+#define MAX_CONNECTION 1024
+#define TEXT_BUF_SIZE (1024 * 2)
 #define CIPHER_BUF_SIZE (TEXT_BUF_SIZE + EVP_MAX_BLOCK_LENGTH + \
 			     EVP_MAX_IV_LENGTH)
 
