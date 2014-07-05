@@ -218,11 +218,6 @@ int encrypt(int sockfd, struct link *ln)
 		goto err;
 
 	cipher_len = len;
-
-	/* if (EVP_EncryptFinal_ex(ctx_p, ln->cipher + len, &len) != 1) */
-	/* 	goto err; */
-
-	/* cipher_len += len; */
 	ln->cipher_len = cipher_len;
 
 	if (!(ln->state & SS_IV_SENT))
@@ -271,12 +266,6 @@ int decrypt(int sockfd, struct link *ln)
 	}
 
 	text_len = len;
-
-	/* if (EVP_DecryptFinal_ex(ctx_p, ln->cipher + len, &len) != 1) { */
-	/* 	goto err; */
-	/* } */
-
-	/* text_len += len; */
 	ln->text_len = text_len;
 	/* decryption succeeded, so cipher buffer is not needed */
 	ln->cipher_len = 0;
