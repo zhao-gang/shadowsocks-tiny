@@ -364,15 +364,16 @@ int main(int argc, char **argv)
 				server_do_pollout(sockfd, ln);
 			}
 
-			if (revents & POLLPRI) {
-				sock_warn(sockfd, "POLLERR");
-			} else if (revents & POLLERR) {
-				sock_warn(sockfd, "POLLERR");
-			} else if (revents & POLLHUP) {
-				sock_warn(sockfd, "POLLHUP");
-			} else if (revents & POLLNVAL) {
-				sock_warn(sockfd, "POLLNVAL");
-			}
+			/* suppress the noise */
+			/* if (revents & POLLPRI) { */
+			/* 	sock_warn(sockfd, "POLLERR"); */
+			/* } else if (revents & POLLERR) { */
+			/* 	sock_warn(sockfd, "POLLERR"); */
+			/* } else if (revents & POLLHUP) { */
+			/* 	sock_warn(sockfd, "POLLHUP"); */
+			/* } else if (revents & POLLNVAL) { */
+			/* 	sock_warn(sockfd, "POLLNVAL"); */
+			/* } */
 		}
 
 		reaper();
