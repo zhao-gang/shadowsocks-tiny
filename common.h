@@ -127,6 +127,7 @@ extern struct pollfd *clients;
 extern int nfds;
 extern struct link *link_head;
 
+void pr_data(FILE *fp, const char *name, char *data, int len);
 void pr_link_debug(struct link *ln);
 void pr_link_info(struct link *ln);
 void pr_link_warn(struct link *ln);

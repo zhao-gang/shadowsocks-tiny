@@ -122,7 +122,7 @@ int main(int argc, char **argv)
 			pr_exit("RAND_bytes failed\n");
 
 		pr_info("random bytes:\n");
-		BIO_dump_fp(stdout, result, 42);
+		pr_data(stdout, "result", result, 42);
 	}
 		
 	size = send(sockfd, text, strlen(text) + 1, 0);

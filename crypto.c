@@ -102,8 +102,7 @@ int add_iv(int sockfd, struct link *ln)
 
 	sock_debug(sockfd, "%s:", __func__);
 	pr_link_debug(ln);
-	if (debug)
-		BIO_dump_fp(stdout, iv_p, iv_len);
+	pr_data(stdout, "iv", iv_p, iv_len);
 
 	return 0;
 err:
@@ -135,8 +134,7 @@ int receive_iv(int sockfd, struct link *ln)
 
 	sock_debug(sockfd, "%s:", __func__);
 	pr_link_debug(ln);
-	if (debug)
-		BIO_dump_fp(stdout, iv_p, iv_len);
+	pr_data(stdout, "iv", iv_p, iv_len);
 
 	return 0;
 err:
@@ -210,8 +208,7 @@ int encrypt(int sockfd, struct link *ln)
 
 	sock_debug(sockfd, "%s: before encrypt", __func__);
 	pr_link_debug(ln);
-	if (debug)
-		BIO_dump_fp(stdout, ln->text, ln->text_len);
+	pr_data(stdout, "text", ln->text, ln->text_len);
 
 	if (EVP_EncryptUpdate(ctx_p, ln->cipher, &len,
 			      ln->text, ln->text_len) != 1)
@@ -228,8 +225,7 @@ int encrypt(int sockfd, struct link *ln)
 	ln->text_len = 0;
 	sock_debug(sockfd, "%s: after encrypt", __func__);
 	pr_link_debug(ln);
-	if (debug)
-		BIO_dump_fp(stdout, ln->cipher, ln->cipher_len);
+	pr_data(stdout, "cipher", ln->cipher, ln->cipher_len);
 
 	return ln->cipher_len;
 err:
@@ -257,8 +253,7 @@ int decrypt(int sockfd, struct link *ln)
 
 	sock_debug(sockfd, "%s: before decrypt", __func__);
 	pr_link_debug(ln);
-	if (debug)
-		BIO_dump_fp(stdout, ln->cipher, ln->cipher_len);
+	pr_data(stdout, "cipher", ln->cipher, ln->cipher_len);
 
 	if (EVP_DecryptUpdate(ctx_p, ln->text, &len,
 			      ln->cipher, ln->cipher_len) != 1) {
@@ -272,8 +267,7 @@ int decrypt(int sockfd, struct link *ln)
 
 	sock_debug(sockfd, "%s: after decrypt", __func__);
 	pr_link_debug(ln);
-	if (debug)
-		BIO_dump_fp(stdout, ln->text, ln->text_len);
+	pr_data(stdout, "text", ln->text, ln->text_len);
 
 	return text_len;
 err:

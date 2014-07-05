@@ -19,6 +19,15 @@ struct pollfd *clients;
 int nfds = MAX_CONNECTION;
 struct link *link_head;
 
+void pr_data(FILE *fp, const char *name, char *data, int len)
+{
+       if (!debug)
+               return;
+
+       fprintf(fp, "%s:\n", name);
+       BIO_dump_fp(fp, (void *)data, len);
+}
+
 void _pr_link(const char *level, struct link *ln)
 {
 	enum link_state state = ln->state;
