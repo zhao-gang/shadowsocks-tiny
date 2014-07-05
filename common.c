@@ -333,7 +333,6 @@ struct link *create_link(int sockfd, const char *type)
 
 	ln->time = time(NULL);
 	return ln;
-
 err:
 	if (ln->local_ctx)
 		EVP_CIPHER_CTX_free(ln->local_ctx);
@@ -386,7 +385,6 @@ static int unlink_link(struct link *ln)
 					/* the link we want to unlink
 				         * is link_head */
 					link_head = head->next;
-					goto out;
 				}
 
 				goto out;
@@ -935,16 +933,15 @@ int do_read(int sockfd, struct link *ln, const char *type, int offset)
 		return -2;
 	}
 
-	ln->time = time(NULL);
-
 	if (strcmp(type, "text") == 0) {
 		ln->text_len = ret + offset;
 	} else if (strcmp(type, "cipher") == 0) {
 		ln->cipher_len = ret + offset;
 	}
 
-	sock_info(sockfd, "%s(%s): offset = %d, buf_len = %d, recv %d bytes",
-		   __func__, type, offset, len, ret);
+	ln->time = time(NULL);
+	sock_info(sockfd, "%s(%s): recv(%d), offset(%d)",
+		  __func__, type, ret, offset);
 	pr_link_info(ln);
 
 	return ret;
@@ -982,14 +979,10 @@ int do_send(int sockfd, struct link *ln, const char *type, int offset)
 		}
 	}
 
-	ln->time = time(NULL);
-
 	if (rm_data(sockfd, ln, type, ret) == -1)
 		return -2;
 
-	sock_info(sockfd, "%s(%s): offset = %d, send %d bytes",
-		   __func__, type, offset, ret);
-	pr_link_info(ln);
+	ln->time = time(NULL);
 
 	if (ret != len) {
 		poll_add(sockfd, POLLOUT);
@@ -999,5 +992,9 @@ int do_send(int sockfd, struct link *ln, const char *type, int offset)
 	}
 		
 	poll_set(sockfd, POLLIN);
+	sock_info(sockfd, "%s(%s): send(%d), offset(%d)",
+		  __func__, type, ret, offset);
+	pr_link_info(ln);
+
 	return ret;
 }
