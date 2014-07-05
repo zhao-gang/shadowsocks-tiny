@@ -313,11 +313,6 @@ struct link *create_link(int sockfd, const char *type)
 
 	ln->state |= LOCAL;
 
-	if (strcmp(type, "client") == 0)
-		ln->state |= SS_CLIENT;
-	else if (strcmp(type, "server") == 0)
-		ln->state |= SS_SERVER;
-
 	ln->local_sockfd = sockfd;
 	ln->server_sockfd = -1;
 

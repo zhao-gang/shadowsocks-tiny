@@ -41,12 +41,6 @@ enum link_state {
 	SS_IV_SENT = BITS(13),
 	SS_IV_RECEIVED = BITS(14),
 	SS_UDP = BITS(15),
-	/* link created by shadowsocks client, used to initialize
-	 * cipher in check_cipher() */
-	SS_CLIENT = BITS(16),
-	/* link created by shadowsocks server, used to initialize
-	 * cipher in check_cipher() */
-	SS_SERVER = BITS(17),
 };
 
 #define	LINKED (LOCAL | SERVER)
