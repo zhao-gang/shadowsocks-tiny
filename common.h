@@ -67,9 +67,7 @@ struct link {
 	void *text;
 	void *cipher;
 	char local_iv[EVP_MAX_IV_LENGTH];
-	char local_key[EVP_MAX_KEY_LENGTH];
 	char server_iv[EVP_MAX_IV_LENGTH];
-	char server_key[EVP_MAX_KEY_LENGTH];
 	struct link *next;
 };
 

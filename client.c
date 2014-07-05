@@ -351,8 +351,8 @@ int main(int argc, char **argv)
 			l_port = optarg;
 			break;
 		case 'k':
-			strncpy(passwd, optarg, MAX_KEY_LEN);
-			passwd[MAX_KEY_LEN - 1] = '\0';
+			strncpy(password, optarg, MAX_KEY_LEN);
+			password[MAX_KEY_LEN - 1] = '\0';
 			break;
 		case 'm':
 			strncpy(method, optarg, MAX_METHOD_NAME_LEN);
@@ -400,7 +400,7 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	if (crypto_init(passwd, method) == -1) {
+	if (crypto_init(password, method) == -1) {
 		ret = -1;
 		goto out;
 	}
