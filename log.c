@@ -160,7 +160,7 @@ static int get_sock_addr(int sockfd, char *str, int *port, const char *type)
 	return 0;
 
 err:
-	pr_debug("%s: %s\n", __func__, strerror(errno));
+	pr_info("%s: %s\n", __func__, strerror(errno));
 	return -1;
 }
 

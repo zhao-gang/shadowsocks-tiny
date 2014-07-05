@@ -100,10 +100,6 @@ int add_iv(int sockfd, struct link *ln)
 
 	ln->state |= SS_IV_SENT;
 
-	sock_debug(sockfd, "%s:", __func__);
-	pr_link_debug(ln);
-	pr_data(stdout, "iv", iv_p, iv_len);
-
 	return 0;
 err:
 	sock_warn(sockfd, "%s failed", __func__);
@@ -131,10 +127,6 @@ int receive_iv(int sockfd, struct link *ln)
 		goto err;
 
 	ln->state |= SS_IV_RECEIVED;
-
-	sock_debug(sockfd, "%s:", __func__);
-	pr_link_debug(ln);
-	pr_data(stdout, "iv", iv_p, iv_len);
 
 	return 0;
 err:
@@ -206,10 +198,6 @@ int encrypt(int sockfd, struct link *ln)
 		goto err;
 	}
 
-	sock_debug(sockfd, "%s: before encrypt", __func__);
-	pr_link_debug(ln);
-	pr_data(stdout, "text", ln->text, ln->text_len);
-
 	if (EVP_EncryptUpdate(ctx_p, ln->cipher, &len,
 			      ln->text, ln->text_len) != 1)
 		goto err;
@@ -223,9 +211,6 @@ int encrypt(int sockfd, struct link *ln)
 
 	/* encryption succeeded, so text buffer is not needed */
 	ln->text_len = 0;
-	sock_debug(sockfd, "%s: after encrypt", __func__);
-	pr_link_debug(ln);
-	pr_data(stdout, "cipher", ln->cipher, ln->cipher_len);
 
 	return ln->cipher_len;
 err:
@@ -251,10 +236,6 @@ int decrypt(int sockfd, struct link *ln)
 		goto err;
 	}
 
-	sock_debug(sockfd, "%s: before decrypt", __func__);
-	pr_link_debug(ln);
-	pr_data(stdout, "cipher", ln->cipher, ln->cipher_len);
-
 	if (EVP_DecryptUpdate(ctx_p, ln->text, &len,
 			      ln->cipher, ln->cipher_len) != 1) {
 		goto err;
@@ -264,10 +245,6 @@ int decrypt(int sockfd, struct link *ln)
 	ln->text_len = text_len;
 	/* decryption succeeded, so cipher buffer is not needed */
 	ln->cipher_len = 0;
-
-	sock_debug(sockfd, "%s: after decrypt", __func__);
-	pr_link_debug(ln);
-	pr_data(stdout, "text", ln->text, ln->text_len);
 
 	return text_len;
 err:

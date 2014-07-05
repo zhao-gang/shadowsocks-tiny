@@ -286,7 +286,7 @@ int main(int argc, char **argv)
 			printf("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out;
 		}
-		pr_ai_debug(l_info, "server listening address:");
+		pr_ai_info(l_info, "server listening address:");
 	} else {
 		printf("Either local addr or local port is not specified\n");
 		usage_server(argv[0]);
