@@ -431,8 +431,13 @@ void destroy_link(struct link *ln)
 	unlink_link(ln);
 	poll_del(ln->local_sockfd);
 	poll_del(ln->server_sockfd);
-	close(ln->local_sockfd);
-	close(ln->server_sockfd);
+
+	if (ln->local_sockfd >= 0)
+		close(ln->local_sockfd);
+
+	if (ln->server_sockfd >= 0)
+		close(ln->server_sockfd);
+
 	free_link(ln);
 }
 
