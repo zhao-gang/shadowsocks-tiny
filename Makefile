@@ -4,10 +4,10 @@ CFLAGS += -g -Wall
 all: sslocal sserver
 
 sslocal : client.c common.o crypto.o log.o
-	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
+	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -lcrypto
 
 sserver : server.c common.o crypto.o log.o
-	$(CC) -o $@ $(CFLAGS) $^ -lcrypto
+	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -lcrypto
 
 common.o: common.h
 
