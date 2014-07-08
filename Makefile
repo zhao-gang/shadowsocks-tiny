@@ -1,12 +1,15 @@
 CFLAGS += -g -Wall
 
 .PHONY: all
-all: sslocal sserver
+all: sslocal sserver test
 
 sslocal : client.c common.o crypto.o log.o
 	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -lcrypto
 
 sserver : server.c common.o crypto.o log.o
+	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -lcrypto
+
+test: test.c common.o crypto.o log.o
 	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -lcrypto
 
 common.o: common.h
@@ -17,4 +20,4 @@ log.o: log.h
 
 .PHONY: clean
 clean:
-	rm -rf *.o sserver sslocal
+	rm -rf *.o sserver sslocal test
