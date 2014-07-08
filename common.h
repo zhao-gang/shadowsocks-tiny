@@ -119,7 +119,7 @@ struct ss_header {
 
 extern struct pollfd *clients;
 extern int nfds;
-extern struct link *link_head;
+extern struct link *link_head[MAX_CONNECTION];
 
 void pr_data(FILE *fp, const char *name, char *data, int len);
 void pr_link_debug(struct link *ln);
@@ -134,10 +134,9 @@ int get_events(int sockfd);
 void reaper(void);
 struct link *create_link(int sockfd, const char *type);
 struct link *get_link(int sockfd);
-void destroy_link(struct link *ln);
-struct addrinfo *get_addr(struct link *ln);
+void destroy_link(int sockfd);
 int do_listen(struct addrinfo *info, const char *type);
-int connect_server(struct link *ln);
+int connect_server(int sockfd);
 int add_data(int sockfd, struct link *ln,
 	     const char *type, char *data, int size);
 int rm_data(int sockfd, struct link *ln, const char *type, int size);

@@ -17,7 +17,7 @@
 
 struct pollfd *clients;
 int nfds = MAX_CONNECTION;
-struct link *link_head;
+struct link *link_head[MAX_CONNECTION];
 
 void pr_data(FILE *fp, const char *name, char *data, int len)
 {
@@ -254,8 +254,8 @@ static int time_out(time_t this, time_t that, double value)
 
 void reaper(void)
 {
+	int sockfd;
 	double value;
-	struct link *next = link_head;
 	struct link *ln;
 	time_t now = time(NULL);
 	static time_t checked = (time_t)-1;
@@ -268,9 +268,10 @@ void reaper(void)
 		checked = now;
 	}
 
-	while (next) {
-		ln = next;
-		next = ln->next;
+	for (sockfd = 0; sockfd < MAX_CONNECTION; sockfd++) {
+		ln = link_head[sockfd];
+		if (ln == NULL)
+			continue;
 
 		if (ln->state & SERVER)
 			value = TCP_INACTIVE_TIMEOUT;
@@ -286,7 +287,7 @@ void reaper(void)
 				pr_debug("%s: inactive timeout, close\n",
 					 __func__);
 
-			destroy_link(ln);
+			destroy_link(sockfd);
 		}
 	}
 }
@@ -294,7 +295,6 @@ void reaper(void)
 struct link *create_link(int sockfd, const char *type)
 {
 	struct link *ln;
-	struct link *head = link_head;
 
 	ln = calloc(1, sizeof(*ln));
 	if (ln == NULL)
@@ -322,18 +322,21 @@ struct link *create_link(int sockfd, const char *type)
 
 	ln->local_sockfd = sockfd;
 	ln->server_sockfd = -1;
+	ln->time = time(NULL);
 
-	if (head) {
-		while (head->next != NULL)
-			head = head->next;
-		head->next = ln;
-	} else {
-		link_head = ln;
+	if (link_head[sockfd] != NULL) {
+		sock_warn(sockfd, "%s: link already exist for sockfd %d",
+			  __func__, sockfd);
+		goto err;
 	}
 
-	ln->time = time(NULL);
+	link_head[sockfd] = ln;
+
 	return ln;
 err:
+	if (ln->server_ctx)
+		EVP_CIPHER_CTX_free(ln->server_ctx);
+
 	if (ln->local_ctx)
 		EVP_CIPHER_CTX_free(ln->local_ctx);
 
@@ -352,55 +355,17 @@ err:
 
 struct link *get_link(int sockfd)
 {
-	struct link *head = link_head;
-
-	while (head) {
-		if (head->local_sockfd == sockfd ||
-		    head->server_sockfd == sockfd) {
-			return head;
-		} else {
-			head = head->next;
-		}
+	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+		pr_warn("%s: invalid sockfd %d", __func__, sockfd);
+		return NULL;
 	}
 
-	sock_warn(sockfd, "%s: failed", __func__);
-	return NULL;
-}
-
-static int unlink_link(struct link *ln)
-{
-	struct link *head = link_head;
-	struct link *previous = link_head;
-
-	if (head == NULL) {
-		pr_warn("%s: link list is empty\n", __func__);
-		return -1;
-	} else {
-		while (head) {
-			if (head->local_sockfd == ln->local_sockfd &&
-			    head->server_sockfd == ln->server_sockfd) {
-				previous->next = head->next;
-
-				if (previous == head) {
-					/* the link we want to unlink
-				         * is link_head */
-					link_head = head->next;
-				}
-
-				goto out;
-			}
-
-			previous = head;
-			head = head->next;
-		}
+	if (link_head[sockfd] == NULL) {
+		sock_warn(sockfd, "%s: link doesn't exist", __func__);
+		return NULL;
 	}
 
-	pr_link_warn(ln);
-	pr_warn("%s failed: link not found\n", __func__);
-	return -1;
-
-out:
-	return 0;
+	return link_head[sockfd];
 }
 
 static void free_link(struct link *ln)
@@ -421,12 +386,16 @@ static void free_link(struct link *ln)
 		free(ln);
 }
 
-void destroy_link(struct link *ln)
+void destroy_link(int sockfd)
 {
-	pr_debug("%s:\n", __func__);
-	pr_link_debug(ln);
+	struct link *ln;
 
-	unlink_link(ln);
+	ln = get_link(sockfd);
+	if (ln == NULL)
+		return;
+
+	link_head[ln->local_sockfd] = NULL;
+	link_head[ln->server_sockfd] = NULL;
 	poll_del(ln->local_sockfd);
 	poll_del(ln->server_sockfd);
 
@@ -476,10 +445,15 @@ err:
 	err_exit("do_listen");
 }
 
-int connect_server(struct link *ln)
+int connect_server(int sockfd)
 {
-	int ret, sockfd, type;
-	struct addrinfo *ai = ln->server;
+	int new_sockfd, ret, type;
+	struct link *ln;
+	struct addrinfo *ai;
+
+	ln = get_link(sockfd);
+	if (ln == NULL)
+		return -1;
 
 	if (ln->server_sockfd != -1) {
 		pr_warn("%s is called twice on link, "
@@ -493,21 +467,23 @@ int connect_server(struct link *ln)
 	else
 		type = SOCK_STREAM;
 
+	ai = ln->server;
 	while (ai) {
 		if (ai->ai_socktype == type) {
 			type |= SOCK_NONBLOCK;
-			sockfd = socket(ai->ai_family, type, 0);
-			if (sockfd == -1)
+			new_sockfd = socket(ai->ai_family, type, 0);
+			if (new_sockfd == -1)
 				goto err;
 
-			ln->server_sockfd = sockfd;
+			link_head[new_sockfd] = ln;
+			ln->server_sockfd = new_sockfd;
 			ln->time = time(NULL);
-			ret = connect(sockfd, ai->ai_addr, ai->ai_addrlen);
+			ret = connect(new_sockfd, ai->ai_addr, ai->ai_addrlen);
 			if (ret == -1) {
 				/* it's ok to return inprogress, will
 				 * handle it later */
 				if (errno == EINPROGRESS) {
-					poll_set(sockfd, POLLOUT);
+					poll_set(new_sockfd, POLLOUT);
 					return 0;
 				} else {
 					goto err;
@@ -516,8 +492,8 @@ int connect_server(struct link *ln)
 
 			/* sucessfully connected */
 			ln->state |= SERVER;
-			poll_set(sockfd, POLLIN);
-			sock_info(sockfd, "%s: connected", __func__);
+			poll_set(new_sockfd, POLLIN);
+			sock_info(new_sockfd, "%s: connected", __func__);
 			return 0;
 		}
 
@@ -696,7 +672,7 @@ int check_ss_header(int sockfd, struct link *ln)
 
 	ln->server = res;
 
-	if (connect_server(ln) == -1)
+	if (connect_server(sockfd) == -1)
 		return -1;
 
 	return 0;
@@ -812,7 +788,7 @@ int check_socks5_cmd_header(int sockfd, struct link *ln)
 	memcpy(ln->cipher, ln->text, ln->ss_header_len);
 
 	/* all seem okay, connect to server! */
-	if (connect_server(ln) == -1)
+	if (connect_server(sockfd) == -1)
 		return -1;
 
 	return 0;

@@ -155,7 +155,7 @@ out:
 	return 0;
 clean:
 	sock_info(sockfd, "%s: close", __func__);
-	destroy_link(ln);
+	destroy_link(sockfd);
 	return -1;
 }
 
@@ -222,7 +222,7 @@ out:
 	return 0;
 clean:
 	sock_info(sockfd, "%s: close:", __func__);
-	destroy_link(ln);
+	destroy_link(sockfd);
 	return -1;
 }
 
