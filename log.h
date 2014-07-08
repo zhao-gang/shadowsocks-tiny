@@ -14,6 +14,8 @@ extern bool verbose;
 #define pr_warn(fmt, args...) printf("WARNING: " fmt, ## args)
 
 void pr_debug(const char *fmt, ...);
+int _pr_addrinfo(const char *level, struct addrinfo *info,
+		 const char *fmt, va_list ap);
 void pr_info(const char *fmt, ...);
 void pr_ai_debug(struct addrinfo *info, const char *fmt, ...);
 void pr_ai_info(struct addrinfo *info, const char *fmt, ...);

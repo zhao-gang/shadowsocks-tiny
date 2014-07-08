@@ -384,7 +384,7 @@ int main(int argc, char **argv)
 			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out;
 		}
-		pr_ai_info(s_info, "server addrinfo");
+		_pr_addrinfo("INFO", s_info, "server address", NULL);
 	} else {
 		pr_warn("Either server addr or server port is not specified\n");
 		usage_client(argv[0]);
@@ -398,6 +398,7 @@ int main(int argc, char **argv)
 			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out;
 		}
+		_pr_addrinfo("INFO", l_info, "listening address", NULL);
 	} else {
 		pr_warn("Either local addr or local port is not specified\n");
 		usage_client(argv[0]);

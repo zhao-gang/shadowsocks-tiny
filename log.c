@@ -43,8 +43,8 @@ void pr_info(const char *fmt, ...)
 	va_end(ap);
 }
 
-static int _pr_addrinfo(const char *level, struct addrinfo *info,
-			const char *fmt, va_list ap)
+int _pr_addrinfo(const char *level, struct addrinfo *info,
+		 const char *fmt, va_list ap)
 {
 	struct addrinfo *ai = info;
 	void *addrptr;
@@ -52,8 +52,13 @@ static int _pr_addrinfo(const char *level, struct addrinfo *info,
 	unsigned short port;
 
 	printf("%s: ", level);
-	vprintf(fmt, ap);
-	printf(":");
+
+	if (ap == NULL) {
+		printf("%s: ", fmt);
+	} else {
+		vprintf(fmt, ap);
+		printf(": ");
+	}
 
 	while (ai) {
 		if (ai->ai_family == AF_INET) {
@@ -70,9 +75,9 @@ static int _pr_addrinfo(const char *level, struct addrinfo *info,
 		}
 
 		if (ai->ai_socktype == SOCK_STREAM)
-			printf(" %s:%d(tcp)", addr, port);
+			printf("%s:%d(tcp)", addr, port);
 		else if (ai->ai_socktype == SOCK_DGRAM)
-			printf(" %s:%d(udp)", addr, port);
+			printf("%s:%d(udp)", addr, port);
 		ai = ai->ai_next;
 	}
 
