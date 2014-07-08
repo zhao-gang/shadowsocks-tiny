@@ -1,6 +1,10 @@
 #ifndef SS_LOG_H
 #define SS_LOG_H
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+
 extern bool debug;
 extern bool verbose;
 
