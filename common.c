@@ -620,6 +620,7 @@ int check_ss_header(int sockfd, struct link *ln)
 	struct addrinfo *res;
 
 	memset(&hint, 0, sizeof(hint));
+	hint.ai_socktype = SOCK_STREAM;
 
 	req = (void *)ln->text;
 

@@ -321,6 +321,7 @@ int main(int argc, char **argv)
 	struct link *ln;
 	struct addrinfo *s_info = NULL;
 	struct addrinfo *l_info = NULL;
+	struct addrinfo hint;
 
 	struct option long_options[] = {
 		{"server", required_argument, 0, 's'},
@@ -373,8 +374,12 @@ int main(int argc, char **argv)
 		}
 	}
 
+	memset(&hint, 0, sizeof(hint));
+	hint.ai_family = AF_UNSPEC;
+	hint.ai_socktype = SOCK_STREAM;
+
 	if (server && s_port) {
-		ret = getaddrinfo(server, s_port, NULL, &s_info);
+		ret = getaddrinfo(server, s_port, &hint, &s_info);
 		if (ret != 0) {
 			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out;
@@ -388,7 +393,7 @@ int main(int argc, char **argv)
 	}
 
 	if (local && l_port) {
-		ret = getaddrinfo(local, l_port, NULL, &l_info);
+		ret = getaddrinfo(local, l_port, &hint, &l_info);
 		if (ret != 0) {
 			pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 			goto out;
