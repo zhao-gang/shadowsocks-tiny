@@ -1,4 +1,3 @@
-#include <getopt.h>
 #include <errno.h>
 #include <netdb.h>
 #include <stdio.h>
@@ -11,19 +10,6 @@
 #include "common.h"
 #include "crypto.h"
 #include "log.h"
-
-void usage_server(const char *name)
-{
-	printf("Usage: %s [options]\n", name);
-	printf("Options:\n");
-	printf("\t-l,--local local\n");
-	printf("\t-b,--local-port local port\n");
-	printf("\t-k,--password your password\n");
-	printf("\t-m,--method encryption algorithm\n");
-	printf("\t-d,--debug print debug information\n");
-	printf("\t-v,--verbose print verbose information\n");
-	printf("\t-h,--help print this help information\n");
-}
 
 /* read text from remote, encrypt and send to local */
 int server_do_remote_read(int sockfd, struct link *ln)
@@ -229,77 +215,30 @@ clean:
 int main(int argc, char **argv)
 {
 	short revents;
-	int i, listenfd, opt, sockfd;
+	int i, listenfd, sockfd;
 	int ret = 0;
-	char *local = NULL;
-	char *l_port = NULL;
 	struct link *ln;
 	struct addrinfo *s_info = NULL;
 	struct addrinfo *l_info = NULL;
 	struct addrinfo hint;
 
-	struct option long_options[] = {
-		{"local", required_argument, 0, 'c'},
-		{"local-port", required_argument, 0, 'b'},
-		{"password", required_argument, 0, 'k'},
-		{"method", required_argument, 0, 'm'},
-		{"verbose", no_argument, 0, 'v'},
-		{"debug", no_argument, 0, 'd'},
-		{"help", no_argument, 0, 'h'},
-		{0, 0, 0, 0}
-	};
-
-	while ((opt = getopt_long(argc, argv, "l:b:k:m:vdh",
-				  long_options, NULL)) != -1) {
-		switch (opt) {
-		case 'l':
-			local = optarg;
-			break;
-		case 'b':
-			l_port = optarg;
-			break;
-		case 'k':
-			strncpy(password, optarg, MAX_PWD_LEN);
-			password[MAX_PWD_LEN] = '\0';
-			break;
-		case 'm':
-			strncpy(method, optarg, MAX_METHOD_NAME_LEN);
-			method[MAX_METHOD_NAME_LEN - 1] = '\0';
-			break;
-		case 'v':
-			verbose = true;
-			break;
-		case 'd':
-			debug = true;
-			break;
-		case 'h':
-			usage_server(argv[0]);
-			exit(EXIT_SUCCESS);
-		case '?':
-			usage_server(argv[0]);
-			exit(EXIT_FAILURE);
-		}
-	}
+	if (check_ss_option(argc, argv, "server") != 0)
+		goto out;
 
 	memset(&hint, 0, sizeof(hint));
 	hint.ai_family = AF_UNSPEC;
 	hint.ai_socktype = SOCK_STREAM;
 
-	if (local && l_port) {
-		ret = getaddrinfo(local, l_port, &hint, &l_info);
-		if (ret != 0) {
-			printf("getaddrinfo error: %s\n", gai_strerror(ret));
-			goto out;
-		}
-		_pr_addrinfo("INFO", l_info, "listening address:", NULL);
-	} else {
-		printf("Either local addr or local port is not specified\n");
-		usage_server(argv[0]);
+	ret = getaddrinfo(ss_opt.local, ss_opt.local_port, &hint, &l_info);
+	if (ret != 0) {
+		printf("getaddrinfo error: %s\n", gai_strerror(ret));
 		ret = -1;
 		goto out;
 	}
 
-	if (crypto_init(password, method) == -1) {
+	_pr_addrinfo("INFO", l_info, "listening address:", NULL);
+
+	if (crypto_init(ss_opt.password, ss_opt.method) == -1) {
 		ret = -1;
 		goto out;
 	}

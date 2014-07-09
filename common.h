@@ -28,8 +28,8 @@
 #define MAX_METHOD_NAME_LEN 16
 
 struct ss_option {
-	char server_address[MAX_DOMAIN_LEN + 1];
-	char local_address[MAX_DOMAIN_LEN + 1];
+	char server[MAX_DOMAIN_LEN + 1];
+	char local[MAX_DOMAIN_LEN + 1];
 	char server_port[MAX_PORT_STRING_LEN + 1];
 	char local_port[MAX_PORT_STRING_LEN + 1];
 	char password[MAX_PWD_LEN + 1];
@@ -133,8 +133,10 @@ struct ss_header {
 
 extern struct pollfd *clients;
 extern int nfds;
+extern struct ss_option ss_opt;
 extern struct link *link_head[MAX_CONNECTION];
 
+int check_ss_option(int argc, char **argv, const char *type);
 void pr_data(FILE *fp, const char *name, char *data, int len);
 void pr_link_debug(struct link *ln);
 void pr_link_info(struct link *ln);

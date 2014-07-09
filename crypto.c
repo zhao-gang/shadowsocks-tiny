@@ -9,8 +9,6 @@
 #include "common.h"
 #include "crypto.h"
 
-char password[MAX_PWD_LEN + 1];
-char method[MAX_METHOD_NAME_LEN + 1];
 int iv_len;
 static const EVP_CIPHER *evp_cipher;
 static const EVP_MD *md;
@@ -42,7 +40,7 @@ int get_method(char *password, char *method)
 	if (md == NULL)
 		goto err;
 
-	evp_cipher = EVP_get_cipherbyname(method);
+	evp_cipher = EVP_get_cipherbyname(ss_opt.method);
 	if (evp_cipher == NULL)
 		goto err;
 

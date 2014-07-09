@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <getopt.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -17,7 +18,271 @@
 
 struct pollfd *clients;
 int nfds = MAX_CONNECTION;
+struct ss_option ss_opt;
 struct link *link_head[MAX_CONNECTION];
+
+static void usage_client(const char *name)
+{
+	printf("Usage: %s [options]\n", name);
+	printf("Options:\n");
+	printf("\t-s,--server server\n");
+	printf("\t-p,--server-port server port\n");
+	printf("\t-l,--l local\n");
+	printf("\t-b,--local-port local port\n");
+	printf("\t-k,--password your password\n");
+	printf("\t-m,--method encryption algorithm\n");
+	printf("\t-d,--debug print debug information\n");
+	printf("\t-v,--verbose print verbose information\n");
+	printf("\t-h,--help print this help\n");
+}
+
+static void usage_server(const char *name)
+{
+	printf("Usage: %s [options]\n", name);
+	printf("Options:\n");
+	printf("\t-l,--local local\n");
+	printf("\t-b,--local-port local port\n");
+	printf("\t-k,--password your password\n");
+	printf("\t-m,--method encryption algorithm\n");
+	printf("\t-d,--debug print debug information\n");
+	printf("\t-v,--verbose print verbose information\n");
+	printf("\t-h,--help print this help information\n");
+}
+
+static int parse_cmdline(int argc, char **argv, const char *type)
+{
+	int len, opt;
+	struct option *longopts;
+	const char *optstring;
+	void (*usage)(const char *name);
+	struct option server_long_options[] = {
+		{"local", required_argument, 0, 'l'},
+		{"local-port", required_argument, 0, 'b'},
+		{"password", required_argument, 0, 'k'},
+		{"method", required_argument, 0, 'm'},
+		{"verbose", no_argument, 0, 'v'},
+		{"debug", no_argument, 0, 'd'},
+		{"help", no_argument, 0, 'h'},
+		{0, 0, 0, 0}
+	};
+
+	struct option client_long_options[] = {
+		{"server", required_argument, 0, 's'},
+		{"server-port", required_argument, 0, 'p'},
+		{"local", required_argument, 0, 'l'},
+		{"local-port", required_argument, 0, 'b'},
+		{"password", required_argument, 0, 'k'},
+		{"method", required_argument, 0, 'm'},
+		{"verbose", no_argument, 0, 'v'},
+		{"debug", no_argument, 0, 'd'},
+		{"help", no_argument, 0, 'h'},
+		{0, 0, 0, 0}
+	};
+
+	if (strcmp(type, "client") == 0) {
+		longopts = client_long_options;
+		optstring = "s:p:l:b:k:m:dvh";
+		usage = usage_client;
+	} else if (strcmp(type, "server") == 0) {
+		longopts = server_long_options;
+		optstring = "l:b:k:m:dvh";
+		usage = usage_server;
+	} else {
+		pr_warn("%s: unknown type\n", __func__);
+		return -1;
+	}
+
+	while (1) {
+		opt = getopt_long(argc, argv, optstring, longopts, NULL);
+		if (opt == -1)
+			break;
+
+		switch (opt) {
+		case 's':
+			if (strcmp(type, "server") == 0) {
+				pr_warn("%s: server doesn't need -s option\n",
+					__func__);
+				break;
+			}
+
+			len = strlen(optarg);
+			if (len <= MAX_DOMAIN_LEN) {
+				strcpy(ss_opt.server, optarg);
+			} else {
+				strncpy(ss_opt.server, optarg,
+					MAX_DOMAIN_LEN);
+				ss_opt.server[MAX_DOMAIN_LEN] = '\0';
+			}
+
+			break;
+		case 'p':
+			if (strcmp(type, "server") == 0) {
+				pr_warn("%s: server doesn't need -p option\n",
+					__func__);
+				break;
+			}
+
+			len = strlen(optarg);
+			if (len <= MAX_PORT_STRING_LEN) {
+				strcpy(ss_opt.server_port, optarg);
+			} else {
+				strncpy(ss_opt.server_port, optarg,
+					MAX_PORT_STRING_LEN);
+				ss_opt.server_port[MAX_PORT_STRING_LEN] = '\0';
+			}
+
+			break;
+		case 'l':
+			len = strlen(optarg);
+			if (len <= MAX_DOMAIN_LEN) {
+				strcpy(ss_opt.local, optarg);
+			} else {
+				strncpy(ss_opt.local, optarg,
+					MAX_DOMAIN_LEN);
+				ss_opt.local[MAX_DOMAIN_LEN] = '\0';
+			}
+
+			break;
+		case 'b':
+			len = strlen(optarg);
+			if (len <= MAX_PORT_STRING_LEN) {
+				strcpy(ss_opt.local_port, optarg);
+			} else {
+				strncpy(ss_opt.local_port, optarg,
+					MAX_PORT_STRING_LEN);
+				ss_opt.local_port[MAX_PORT_STRING_LEN] = '\0';
+			}
+
+			break;
+		case 'k':
+			len = strlen(optarg);
+			if (len <= MAX_PWD_LEN) {
+				strcpy(ss_opt.password, optarg);
+			} else {
+				strncpy(ss_opt.password, optarg,
+					MAX_PWD_LEN);
+				ss_opt.password[MAX_PWD_LEN] = '\0';
+			}
+
+			break;
+		case 'm':
+			len = strlen(optarg);
+			if (len <= MAX_METHOD_NAME_LEN) {
+				strcpy(ss_opt.method, optarg);
+			} else {
+				strncpy(ss_opt.method, optarg,
+					MAX_METHOD_NAME_LEN);
+				ss_opt.method[MAX_METHOD_NAME_LEN] = '\0';
+			}
+
+			break;
+		case 'v':
+			verbose = true;
+			break;
+		case 'd':
+			debug = true;
+			break;
+		case 'h':
+			usage(argv[0]);
+			exit(EXIT_SUCCESS);
+		case '?':
+			usage(argv[0]);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	return 0;
+}
+
+static int parse_config_file(int argc, char **argv, const char *type)
+{
+	int opt;
+	const char *path;
+	struct option long_options[] = {
+		{"server", required_argument, 0, 's'},
+		{"server-port", required_argument, 0, 'p'},
+		{"local", required_argument, 0, 'c'},
+		{"local-port", required_argument, 0, 'b'},
+		{"password", required_argument, 0, 'k'},
+		{"method", required_argument, 0, 'm'},
+		{"verbose", no_argument, 0, 'v'},
+		{"debug", no_argument, 0, 'd'},
+		{"help", no_argument, 0, 'h'},
+		{"config-file", required_argument, 0, 'c'},
+		{0, 0, 0, 0}
+	};
+
+	if (strcmp(type, "client") == 0) {
+		path = "/etc/ss_client.conf";
+	} else if (strcmp(type, "server") == 0) {
+		path = "/etc/ss_server.conf";
+	} else {
+		pr_warn("%s: unknown type\n", __func__);
+		return -1;
+	}
+
+	while (1) {
+		opt = getopt_long(argc, argv, "c:s:p:l:b:k:m:dvh",
+				  long_options, NULL);
+		if (opt == -1)
+			break;
+
+		switch (opt) {
+		case 'c':
+			path = optarg;
+			break;
+		}
+	}
+
+	/* reset optind, so the following parse_cmdline() will work */
+	optind = 1;
+
+	pr_info("%s: config file: %s\n", __func__, path);
+
+	/* parse file */
+	return 0;
+}
+
+int check_ss_option(int argc, char **argv, const char *type)
+{
+	void (*usage)(const char *name);
+
+	parse_config_file(argc, argv, type);
+	parse_cmdline(argc, argv, type);
+
+	if (strcmp(type, "client") == 0) {
+		usage = usage_client;
+		if (ss_opt.server == NULL || ss_opt.server_port == NULL) {
+			pr_warn("Either server address or server port "
+				"is not specified\n");
+			goto err;
+		}
+	} else if (strcmp(type, "server") == 0) {
+		usage = usage_server;
+	}
+
+	if (ss_opt.local == NULL || ss_opt.local_port == NULL) {
+		pr_warn("Either local address or local port "
+			"is not specified\n");
+		goto err;
+	}
+
+	pr_info("Options:\n");
+
+	if (strcmp(type, "client") == 0)
+		pr_info("server address: %s, server port: %s\n",
+			ss_opt.server, ss_opt.server_port);
+
+	pr_info("local address: %s, local port: %s\n",
+		ss_opt.local, ss_opt.local_port);
+	pr_info("password: %s\n", ss_opt.password);
+	pr_info("method: %s\n", ss_opt.method);
+
+	return 0;
+err:
+	usage(argv[0]);
+	return -1;
+}
 
 void pr_data(FILE *fp, const char *name, char *data, int len)
 {
