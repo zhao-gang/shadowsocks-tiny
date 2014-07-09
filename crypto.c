@@ -9,8 +9,8 @@
 #include "common.h"
 #include "crypto.h"
 
-char password[MAX_KEY_LEN];
-char method[MAX_METHOD_NAME_LEN];
+char password[MAX_PWD_LEN + 1];
+char method[MAX_METHOD_NAME_LEN + 1];
 int iv_len;
 static const EVP_CIPHER *evp_cipher;
 static const EVP_MD *md;

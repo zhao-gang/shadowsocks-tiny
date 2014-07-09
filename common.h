@@ -22,6 +22,20 @@
 #define TEXT_BUF_SIZE (1024 * 8)
 #define CIPHER_BUF_SIZE (TEXT_BUF_SIZE + EVP_MAX_BLOCK_LENGTH + \
 			 EVP_MAX_IV_LENGTH)
+#define MAX_DOMAIN_LEN 255
+#define MAX_PORT_STRING_LEN 5
+#define MAX_PWD_LEN 16
+#define MAX_METHOD_NAME_LEN 16
+
+struct ss_option {
+	char server_address[MAX_DOMAIN_LEN + 1];
+	char local_address[MAX_DOMAIN_LEN + 1];
+	char server_port[MAX_PORT_STRING_LEN + 1];
+	char local_port[MAX_PORT_STRING_LEN + 1];
+	char password[MAX_PWD_LEN + 1];
+	char method[MAX_METHOD_NAME_LEN + 1];
+	bool daemon;
+};
 
 #define BITS(x) (1 << (x))
 

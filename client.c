@@ -352,8 +352,8 @@ int main(int argc, char **argv)
 			l_port = optarg;
 			break;
 		case 'k':
-			strncpy(password, optarg, MAX_KEY_LEN);
-			password[MAX_KEY_LEN - 1] = '\0';
+			strncpy(password, optarg, MAX_PWD_LEN);
+			password[MAX_PWD_LEN] = '\0';
 			break;
 		case 'm':
 			strncpy(method, optarg, MAX_METHOD_NAME_LEN);
