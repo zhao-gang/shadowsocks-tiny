@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
 #include <stdio.h>
@@ -8,8 +9,10 @@
 #include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <json-c/json.h>
 #include <openssl/evp.h>
 #include <openssl/bio.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -49,6 +52,20 @@ static void usage_server(const char *name)
 	printf("\t-h,--help print this help information\n");
 }
 
+static void pr_ss_option(const char *type)
+{
+	pr_info("Options:\n");
+
+	if (strcmp(type, "client") == 0)
+		pr_info("server address: %s, server port: %s\n",
+			ss_opt.server, ss_opt.server_port);
+
+	pr_info("local address: %s, local port: %s\n",
+		ss_opt.local, ss_opt.local_port);
+	pr_info("password: %s\n", ss_opt.password);
+	pr_info("method: %s\n", ss_opt.method);
+}
+
 static int parse_cmdline(int argc, char **argv, const char *type)
 {
 	int len, opt;
@@ -60,8 +77,9 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 		{"local-port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
-		{"verbose", no_argument, 0, 'v'},
 		{"debug", no_argument, 0, 'd'},
+		{"verbose", no_argument, 0, 'v'},
+		{"config-file", required_argument, 0, 'c'},
 		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
@@ -73,19 +91,20 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 		{"local-port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
-		{"verbose", no_argument, 0, 'v'},
 		{"debug", no_argument, 0, 'd'},
+		{"verbose", no_argument, 0, 'v'},
+		{"config-file", required_argument, 0, 'c'},
 		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
 
 	if (strcmp(type, "client") == 0) {
 		longopts = client_long_options;
-		optstring = "s:p:l:b:k:m:dvh";
+		optstring = "s:p:l:b:k:m:c:dvh";
 		usage = usage_client;
 	} else if (strcmp(type, "server") == 0) {
 		longopts = server_long_options;
-		optstring = "l:b:k:m:dvh";
+		optstring = "l:b:k:m:c:dvh";
 		usage = usage_server;
 	} else {
 		pr_warn("%s: unknown type\n", __func__);
@@ -194,6 +213,115 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 	return 0;
 }
 
+static int parse_json(const char *file_name, const char *type)
+{
+	int fd, len, ret;
+	struct json_tokener *tok;
+	struct json_object *parent;
+	const char *str;
+	char buff[1024];
+
+	fd = open(file_name, O_RDONLY);
+	if (fd == -1) {
+		pr_warn("%s: %s\n", __func__, strerror(errno));
+		return -1;
+	}
+
+	ret = read(fd, buff, 1024);
+	if (ret == -1) {
+		pr_warn("%s: %s\n", __func__, strerror(errno));
+		return -1;
+	}
+
+	tok = json_tokener_new();
+	if (tok == NULL) {
+		pr_warn("%s: json_tokener_new error\n", __func__);
+		return -1;
+	}
+
+	parent = json_tokener_parse_ex(tok, buff, ret);
+	ret = json_tokener_get_error(tok);
+	if (ret != json_tokener_success) {
+		pr_warn("%s: %s\n", __func__, json_tokener_error_desc(ret));
+		return -1;
+	}
+
+	json_object_object_foreach(parent, key, child) {
+		str = json_object_to_json_string_ext(child,
+						     JSON_C_TO_STRING_PLAIN);
+		len = strlen(str);
+
+		if (strcmp(key, "server") == 0) {
+			if (strcmp(type, "server") == 0) {
+				pr_warn("%s: server doesn't need -s option\n",
+					__func__);
+				continue;
+			}
+
+			if (len <= MAX_DOMAIN_LEN) {
+				strcpy(ss_opt.server, str);
+			} else {
+				strncpy(ss_opt.server, str,
+					MAX_DOMAIN_LEN);
+				ss_opt.server[MAX_DOMAIN_LEN] = '\0';
+			}
+		} else if (strcmp(key, "server_port") == 0) {
+			if (strcmp(type, "server") == 0) {
+				pr_warn("%s: server doesn't need -p option\n",
+					__func__);
+				continue;
+			}
+
+			if (len <= MAX_PORT_STRING_LEN) {
+				strcpy(ss_opt.server_port, str);
+			} else {
+				strncpy(ss_opt.server_port, str,
+					MAX_PORT_STRING_LEN);
+				ss_opt.server_port[MAX_PORT_STRING_LEN] = '\0';
+			}
+		} else if (strcmp(key, "local") == 0) {
+			if (len <= MAX_DOMAIN_LEN) {
+				strcpy(ss_opt.local, str);
+			} else {
+				strncpy(ss_opt.local, str,
+					MAX_DOMAIN_LEN);
+				ss_opt.local[MAX_DOMAIN_LEN] = '\0';
+			}
+		} else if (strcmp(key, "local_port") == 0) {
+			if (len <= MAX_PORT_STRING_LEN) {
+				strcpy(ss_opt.local_port, str);
+			} else {
+				strncpy(ss_opt.local_port, str,
+					MAX_PORT_STRING_LEN);
+				ss_opt.local_port[MAX_PORT_STRING_LEN] = '\0';
+			}
+		} else if (strcmp(key, "password") == 0) {
+			if (len <= MAX_PWD_LEN) {
+				strcpy(ss_opt.password, str);
+			} else {
+				strncpy(ss_opt.password, str,
+					MAX_PWD_LEN);
+				ss_opt.password[MAX_PWD_LEN] = '\0';
+			}
+		} else if (strcmp(key, "method") == 0) {
+			if (len <= MAX_METHOD_NAME_LEN) {
+				strcpy(ss_opt.method, str);
+			} else {
+				strncpy(ss_opt.method, str,
+					MAX_METHOD_NAME_LEN);
+				ss_opt.method[MAX_METHOD_NAME_LEN] = '\0';
+			}
+		} else {
+			pr_warn("%s: unknown option: (key: %s; value: %s)\n",
+				__func__, key, str);
+		}
+	}
+
+	json_tokener_free(tok);
+	json_object_put(parent);
+	return 0;
+}
+
 static int parse_config_file(int argc, char **argv, const char *type)
 {
 	int opt;
@@ -207,8 +335,8 @@ static int parse_config_file(int argc, char **argv, const char *type)
 		{"method", required_argument, 0, 'm'},
 		{"verbose", no_argument, 0, 'v'},
 		{"debug", no_argument, 0, 'd'},
-		{"help", no_argument, 0, 'h'},
 		{"config-file", required_argument, 0, 'c'},
+		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
 
@@ -222,7 +350,7 @@ static int parse_config_file(int argc, char **argv, const char *type)
 	}
 
 	while (1) {
-		opt = getopt_long(argc, argv, "c:s:p:l:b:k:m:dvh",
+		opt = getopt_long(argc, argv, "s:p:l:b:k:m:c:dvh",
 				  long_options, NULL);
 		if (opt == -1)
 			break;
@@ -231,15 +359,20 @@ static int parse_config_file(int argc, char **argv, const char *type)
 		case 'c':
 			path = optarg;
 			break;
+		case 'v':
+			verbose = true;
+			break;
+		case 'd':
+			debug = true;
+			break;
 		}
 	}
 
-	/* reset optind, so the following parse_cmdline() will work */
+	/* reset optind, so the following parse_cmdline() can work */
 	optind = 1;
-
 	pr_info("%s: config file: %s\n", __func__, path);
+	parse_json(path, type);
 
-	/* parse file */
 	return 0;
 }
 
@@ -267,17 +400,8 @@ int check_ss_option(int argc, char **argv, const char *type)
 		goto err;
 	}
 
-	pr_info("Options:\n");
-
-	if (strcmp(type, "client") == 0)
-		pr_info("server address: %s, server port: %s\n",
-			ss_opt.server, ss_opt.server_port);
-
-	pr_info("local address: %s, local port: %s\n",
-		ss_opt.local, ss_opt.local_port);
-	pr_info("password: %s\n", ss_opt.password);
-	pr_info("method: %s\n", ss_opt.method);
-
+	pr_info("%s: The final option:\n", __func__);
+	pr_ss_option(type);
 	return 0;
 err:
 	usage(argv[0]);

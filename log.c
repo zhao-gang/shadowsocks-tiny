@@ -54,10 +54,10 @@ int _pr_addrinfo(const char *level, struct addrinfo *info,
 	printf("%s: ", level);
 
 	if (ap == NULL) {
-		printf("%s: ", fmt);
+		printf("%s:", fmt);
 	} else {
 		vprintf(fmt, ap);
-		printf(": ");
+		printf(":");
 	}
 
 	while (ai) {
@@ -75,9 +75,9 @@ int _pr_addrinfo(const char *level, struct addrinfo *info,
 		}
 
 		if (ai->ai_socktype == SOCK_STREAM)
-			printf("%s:%d(tcp)", addr, port);
+			printf(" %s:%d(tcp)", addr, port);
 		else if (ai->ai_socktype == SOCK_DGRAM)
-			printf("%s:%d(udp)", addr, port);
+			printf(" %s:%d(udp)", addr, port);
 		ai = ai->ai_next;
 	}
 

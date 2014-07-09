@@ -1,45 +1,69 @@
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 #include <arpa/inet.h>
+#include <json-c/json.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netdb.h>
+
 
 #include "common.h"
 #include "crypto.h"
 #include "log.h"
 
+int parse_config_file(const char *file_name)
+{
+	int fd, ret;
+	struct json_tokener *tok;
+	struct json_object *parent;
+	char buff[1024];
+
+	fd = open(file_name, O_RDONLY);
+	if (fd == -1) {
+		pr_warn("%s: %s\n", __func__, strerror(errno));
+		return -1;
+	}
+
+	ret = read(fd, buff, 1024);
+	if (ret == -1) {
+		pr_warn("%s: %s\n", __func__, strerror(errno));
+		return -1;
+	}
+
+	tok = json_tokener_new();
+	if (tok == NULL) {
+		pr_warn("%s: json_tokener_new error\n", __func__);
+		return -1;
+	}
+
+	parent = json_tokener_parse_ex(tok, buff, ret);
+	ret = json_tokener_get_error(tok);
+	if (ret != json_tokener_success) {
+		pr_warn("%s: %s\n", __func__, json_tokener_error_desc(ret));
+		return -1;
+	}
+
+	json_object_object_foreach(parent, key, child) {
+		printf("key: %s\n", key);
+		printf("value: %s\n",
+		       json_object_to_json_string_ext(child,
+						      JSON_C_TO_STRING_PLAIN));
+	}
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int ret;
-	struct addrinfo *ai = NULL;
-	void *addrptr;
-	char addr[INET6_ADDRSTRLEN];
-	unsigned short port;
 
-	ret = getaddrinfo(argv[1], argv[2], NULL, &ai);
-	if (ret != 0) {
-		printf("getaddrinfo error\n");
+	ret = parse_config_file(argv[1]);
+	if (ret != 0)
 		exit(1);
-	}
-
-	while (ai) {
-		if (ai->ai_family == AF_INET) {
-			addrptr = &((struct sockaddr_in *)ai->ai_addr)->sin_addr;
-			port = ntohs(((struct sockaddr_in *)ai->ai_addr)->sin_port);
-		} else if (ai->ai_family == AF_INET6) {
-			addrptr = &((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr;
-			port = ntohs(((struct sockaddr_in6 *)ai->ai_addr)->sin6_port);
-		}
-
-		if (inet_ntop(ai->ai_family, addrptr, addr,
-			      INET6_ADDRSTRLEN) == NULL) {
-			perror("inet_ntop");
-			exit(1);
-		}
-
-		printf("%s:%d(socktype: %d)\n", addr, port, ai->ai_socktype);
-		ai = ai->ai_next;
-	}
 
 	return 0;
 }
