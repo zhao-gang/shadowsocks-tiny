@@ -398,7 +398,8 @@ int check_ss_option(int argc, char **argv, const char *type)
 
 	if (strcmp(type, "client") == 0) {
 		usage = usage_client;
-		if (ss_opt.server == NULL || ss_opt.server_port == NULL) {
+		if (strlen(ss_opt.server) == 0 ||
+		    strlen(ss_opt.server_port) == 0) {
 			pr_warn("Either server address or server port "
 				"is not specified\n");
 			goto err;
@@ -407,7 +408,7 @@ int check_ss_option(int argc, char **argv, const char *type)
 		usage = usage_server;
 	}
 
-	if (ss_opt.local == NULL || ss_opt.local_port == NULL) {
+	if (strlen(ss_opt.local) == 0 || strlen(ss_opt.local_port) == 0) {
 		pr_warn("Either local address or local port "
 			"is not specified\n");
 		goto err;
