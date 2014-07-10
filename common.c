@@ -215,6 +215,7 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 
 static int parse_json(const char *file_name, const char *type)
 {
+	int i, j;
 	int fd, len, ret;
 	struct json_tokener *tok;
 	struct json_object *parent;
@@ -249,7 +250,15 @@ static int parse_json(const char *file_name, const char *type)
 	json_object_object_foreach(parent, key, child) {
 		str = json_object_to_json_string_ext(child,
 						     JSON_C_TO_STRING_PLAIN);
-		len = strlen(str);
+
+		/* remove quotation mark */
+		for (i = 0, j = 0; i < strlen(str); i++) {
+			if (str[i] != '"')
+				buff[j++] = str[i];
+		}
+
+		buff[j] = '\0';
+		len = j;
 
 		if (strcmp(key, "server") == 0) {
 			if (strcmp(type, "server") == 0) {
@@ -259,9 +268,9 @@ static int parse_json(const char *file_name, const char *type)
 			}
 
 			if (len <= MAX_DOMAIN_LEN) {
-				strcpy(ss_opt.server, str);
+				strcpy(ss_opt.server, buff);
 			} else {
-				strncpy(ss_opt.server, str,
+				strncpy(ss_opt.server, buff,
 					MAX_DOMAIN_LEN);
 				ss_opt.server[MAX_DOMAIN_LEN] = '\0';
 			}
@@ -273,47 +282,47 @@ static int parse_json(const char *file_name, const char *type)
 			}
 
 			if (len <= MAX_PORT_STRING_LEN) {
-				strcpy(ss_opt.server_port, str);
+				strcpy(ss_opt.server_port, buff);
 			} else {
-				strncpy(ss_opt.server_port, str,
+				strncpy(ss_opt.server_port, buff,
 					MAX_PORT_STRING_LEN);
 				ss_opt.server_port[MAX_PORT_STRING_LEN] = '\0';
 			}
 		} else if (strcmp(key, "local") == 0) {
 			if (len <= MAX_DOMAIN_LEN) {
-				strcpy(ss_opt.local, str);
+				strcpy(ss_opt.local, buff);
 			} else {
-				strncpy(ss_opt.local, str,
+				strncpy(ss_opt.local, buff,
 					MAX_DOMAIN_LEN);
 				ss_opt.local[MAX_DOMAIN_LEN] = '\0';
 			}
 		} else if (strcmp(key, "local_port") == 0) {
 			if (len <= MAX_PORT_STRING_LEN) {
-				strcpy(ss_opt.local_port, str);
+				strcpy(ss_opt.local_port, buff);
 			} else {
-				strncpy(ss_opt.local_port, str,
+				strncpy(ss_opt.local_port, buff,
 					MAX_PORT_STRING_LEN);
 				ss_opt.local_port[MAX_PORT_STRING_LEN] = '\0';
 			}
 		} else if (strcmp(key, "password") == 0) {
 			if (len <= MAX_PWD_LEN) {
-				strcpy(ss_opt.password, str);
+				strcpy(ss_opt.password, buff);
 			} else {
-				strncpy(ss_opt.password, str,
+				strncpy(ss_opt.password, buff,
 					MAX_PWD_LEN);
 				ss_opt.password[MAX_PWD_LEN] = '\0';
 			}
 		} else if (strcmp(key, "method") == 0) {
 			if (len <= MAX_METHOD_NAME_LEN) {
-				strcpy(ss_opt.method, str);
+				strcpy(ss_opt.method, buff);
 			} else {
-				strncpy(ss_opt.method, str,
+				strncpy(ss_opt.method, buff,
 					MAX_METHOD_NAME_LEN);
 				ss_opt.method[MAX_METHOD_NAME_LEN] = '\0';
 			}
 		} else {
 			pr_warn("%s: unknown option: (key: %s; value: %s)\n",
-				__func__, key, str);
+				__func__, key, buff);
 		}
 	}
 
