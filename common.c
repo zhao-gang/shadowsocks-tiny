@@ -21,6 +21,7 @@
 
 struct pollfd *clients;
 int nfds = MAX_CONNECTION;
+static bool daemonize;
 struct ss_option ss_opt;
 struct link *link_head[MAX_CONNECTION];
 
@@ -34,8 +35,9 @@ static void usage_client(const char *name)
 	printf("\t-b,--local-port\t local port\n");
 	printf("\t-k,--password\t your password\n");
 	printf("\t-m,--method\t encryption algorithm\n");
-	printf("\t-d,--debug\t print debug information\n");
+	printf("\t-d,--daemon\t run as daemon\n");
 	printf("\t-v,--verbose\t print verbose information\n");
+	printf("\t-vv\t\t print more verbose information\n");
 	printf("\t-h,--help\t print this help\n");
 }
 
@@ -47,8 +49,9 @@ static void usage_server(const char *name)
 	printf("\t-b,--local-port\t local port\n");
 	printf("\t-k,--password\t your password\n");
 	printf("\t-m,--method\t encryption algorithm\n");
-	printf("\t-d,--debug\t print debug information\n");
+	printf("\t-d,--daemon\t run as daemon\n");
 	printf("\t-v,--verbose\t print verbose information\n");
+	printf("\t-vv\t\t print more verbose information\n");
 	printf("\t-h,--help\t print this help information\n");
 }
 
@@ -77,7 +80,7 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 		{"local-port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
-		{"debug", no_argument, 0, 'd'},
+		{"daemon", no_argument, 0, 'd'},
 		{"verbose", no_argument, 0, 'v'},
 		{"config-file", required_argument, 0, 'c'},
 		{"help", no_argument, 0, 'h'},
@@ -91,7 +94,7 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 		{"local-port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
-		{"debug", no_argument, 0, 'd'},
+		{"daemon", no_argument, 0, 'd'},
 		{"verbose", no_argument, 0, 'v'},
 		{"config-file", required_argument, 0, 'c'},
 		{"help", no_argument, 0, 'h'},
@@ -196,10 +199,13 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 
 			break;
 		case 'v':
-			verbose = true;
+			if (!verbose)
+				verbose = true;
+			else
+				debug = true;
 			break;
 		case 'd':
-			debug = true;
+			daemonize = true;
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -337,16 +343,16 @@ static int parse_config_file(int argc, char **argv, const char *type)
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
 		{"verbose", no_argument, 0, 'v'},
-		{"debug", no_argument, 0, 'd'},
+		{"daemon", no_argument, 0, 'd'},
 		{"config-file", required_argument, 0, 'c'},
 		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
 
 	if (strcmp(type, "client") == 0) {
-		path = "/etc/ss_client.conf";
+		path = "/etc/sslocal.conf";
 	} else if (strcmp(type, "server") == 0) {
-		path = "/etc/ss_server.conf";
+		path = "/etc/sserver.conf";
 	} else {
 		pr_warn("%s: unknown type\n", __func__);
 		return -1;
@@ -363,10 +369,10 @@ static int parse_config_file(int argc, char **argv, const char *type)
 			path = optarg;
 			break;
 		case 'v':
-			verbose = true;
-			break;
-		case 'd':
-			debug = true;
+			if (!verbose)
+				verbose = true;
+			else
+				debug = true;
 			break;
 		}
 	}
@@ -413,6 +419,9 @@ int check_ss_option(int argc, char **argv, const char *type)
 			"is not specified\n");
 		goto err;
 	}
+
+	if (daemonize)
+		daemon(0, 1);
 
 	pr_info("%s: The final option:\n", __func__);
 	pr_ss_option(type);
