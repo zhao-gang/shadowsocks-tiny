@@ -28,28 +28,28 @@ static void usage_client(const char *name)
 {
 	printf("Usage: %s [options]\n", name);
 	printf("Options:\n");
-	printf("\t-s,--server server\n");
+	printf("\t-s,--server\t server address\n");
 	printf("\t-p,--server-port server port\n");
-	printf("\t-l,--l local\n");
-	printf("\t-b,--local-port local port\n");
-	printf("\t-k,--password your password\n");
-	printf("\t-m,--method encryption algorithm\n");
-	printf("\t-d,--debug print debug information\n");
-	printf("\t-v,--verbose print verbose information\n");
-	printf("\t-h,--help print this help\n");
+	printf("\t-l,--local\t local address\n");
+	printf("\t-b,--local-port\t local port\n");
+	printf("\t-k,--password\t your password\n");
+	printf("\t-m,--method\t encryption algorithm\n");
+	printf("\t-d,--debug\t print debug information\n");
+	printf("\t-v,--verbose\t print verbose information\n");
+	printf("\t-h,--help\t print this help\n");
 }
 
 static void usage_server(const char *name)
 {
 	printf("Usage: %s [options]\n", name);
 	printf("Options:\n");
-	printf("\t-l,--local local\n");
-	printf("\t-b,--local-port local port\n");
-	printf("\t-k,--password your password\n");
-	printf("\t-m,--method encryption algorithm\n");
-	printf("\t-d,--debug print debug information\n");
-	printf("\t-v,--verbose print verbose information\n");
-	printf("\t-h,--help print this help information\n");
+	printf("\t-l,--local\t local address\n");
+	printf("\t-b,--local-port\t local port\n");
+	printf("\t-k,--password\t your password\n");
+	printf("\t-m,--method\t encryption algorithm\n");
+	printf("\t-d,--debug\t print debug information\n");
+	printf("\t-v,--verbose\t print verbose information\n");
+	printf("\t-h,--help\t print this help information\n");
 }
 
 static void pr_ss_option(const char *type)
