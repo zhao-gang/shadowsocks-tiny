@@ -5,13 +5,13 @@ LDFLAGS += -ljson-c -lcrypto
 all: sslocal sserver test
 
 sslocal : client.c common.o crypto.o log.o
-	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS)
+	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -ljson-c -lcrypto
 
 sserver : server.c common.o crypto.o log.o
-	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS)
+	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -ljson-c -lcrypto
 
 test: test.c common.o crypto.o log.o
-	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS)
+	$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS) -ljson-c -lcrypto
 
 common.o: common.h
 
