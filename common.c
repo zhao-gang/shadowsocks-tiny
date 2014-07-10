@@ -213,20 +213,14 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 	return 0;
 }
 
-static int parse_json(const char *file_name, const char *type)
+static int parse_json(int fd, const char *type)
 {
 	int i, j;
-	int fd, len, ret;
+	int len, ret;
 	struct json_tokener *tok;
 	struct json_object *parent;
 	const char *str;
 	char buff[1024];
-
-	fd = open(file_name, O_RDONLY);
-	if (fd == -1) {
-		pr_warn("%s: %s\n", __func__, strerror(errno));
-		return -1;
-	}
 
 	ret = read(fd, buff, 1024);
 	if (ret == -1) {
@@ -333,7 +327,7 @@ static int parse_json(const char *file_name, const char *type)
 
 static int parse_config_file(int argc, char **argv, const char *type)
 {
-	int opt;
+	int fd, opt;
 	const char *path;
 	struct option long_options[] = {
 		{"server", required_argument, 0, 's'},
@@ -379,10 +373,20 @@ static int parse_config_file(int argc, char **argv, const char *type)
 
 	/* reset optind, so the following parse_cmdline() can work */
 	optind = 1;
-	pr_info("%s: config file: %s\n", __func__, path);
-	parse_json(path, type);
 
-	return 0;
+	fd = open(path, O_RDONLY);
+	if (fd == -1) {
+		if (errno == ENOENT) {
+			pr_info("%s: config file not provided\n",
+				__func__);
+			return 0;
+		} else {
+			pr_warn("%s: %s\n", __func__, strerror(errno));
+			return -1;
+		}
+	}
+
+	return parse_json(fd, type);
 }
 
 int check_ss_option(int argc, char **argv, const char *type)
