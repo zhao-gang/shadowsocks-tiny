@@ -190,3 +190,12 @@ void sock_warn(int sockfd, const char *fmt, ...)
 	sock_print(sockfd, LOG_WARNING, fmt, ap);
 	va_end(ap);
 }
+
+void sock_err(int sockfd, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	sock_print(sockfd, LOG_ERR, fmt, ap);
+	va_end(ap);
+}

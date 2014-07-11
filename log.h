@@ -32,5 +32,6 @@ void sock_debug(int sockfd, const char *fmt, ...);
 void sock_info(int sockfd, const char *fmt, ...);
 void sock_notice(int sockfd, const char *fmt, ...);
 void sock_warn(int sockfd, const char *fmt, ...);
+void sock_err(int sockfd, const char *fmt, ...);
 
 #endif
