@@ -131,7 +131,6 @@ struct ss_header {
 };
 
 extern struct pollfd *clients;
-extern int nfds;
 extern struct ss_option ss_opt;
 extern struct link *link_head[MAX_CONNECTION];
 
@@ -145,7 +144,6 @@ int poll_set(int sockfd, short events);
 int poll_add(int sockfd, short events);
 int poll_rm(int sockfd, short events);
 int poll_del(int sockfd);
-int get_events(int sockfd);
 void reaper(void);
 struct link *create_link(int sockfd, const char *type);
 struct link *get_link(int sockfd);

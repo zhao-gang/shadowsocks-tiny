@@ -19,7 +19,6 @@
 #include "common.h"
 
 struct pollfd *clients;
-int nfds = MAX_CONNECTION;
 static bool daemonize;
 struct ss_option ss_opt;
 struct link *link_head[MAX_CONNECTION];
@@ -353,11 +352,12 @@ void poll_init(void)
 {
 	int i;
 
-	clients = calloc(nfds, sizeof(struct pollfd));
+	clients = calloc(MAX_CONNECTION, sizeof(struct pollfd));
 	if (clients == NULL)
 		pr_exit("%s: calloc failed", __func__);
 
-	for (i = 0; i < nfds; i++)
+
+	for (i = 0; i < MAX_CONNECTION; i++)
 		clients[i].fd = -1;
 }
 
@@ -380,104 +380,70 @@ void poll_events_string(short events, char *events_str)
 
 int poll_set(int sockfd, short events)
 {
-	int i;
 	char events_str[42] = {'\0'};
 
+	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
+		return -1;
+	}
+
+	clients[sockfd].fd = sockfd;
+	clients[sockfd].events = events;
 	poll_events_string(events, events_str);
+	sock_info(sockfd, "%s: %s", __func__, events_str);
 
-	/* i == 0 is listen sockfd, it's not needed to be checked by now */
-	for (i = 1; i < nfds; i++) {
-		if (clients[i].fd == sockfd) {
-			clients[i].events = events;
-			return 0;
-		}
-	}
-
-	for (i = 1; i < nfds; i++) {
-		if (clients[i].fd == -1) {
-			clients[i].fd = sockfd;
-			clients[i].events = events;
-			return 0;
-		}
-	}
-
-	sock_warn(sockfd, "too many connections!");
-	return -1;
+	return 0;
 }
 
 int poll_add(int sockfd, short events)
 {
-	int i;
 	char events_str[42] = {'\0'};
 
-	poll_events_string(events, events_str);
-
-	/* i == 0 is listen sockfd, it's not needed to be checked by now */
-	for (i = 1; i < nfds; i++)
-		if (clients[i].fd == sockfd)
-			break;
-
-	if (i == nfds) {
-		sock_warn(sockfd, "%s: not found", __func__);
-		return poll_set(sockfd, events);
+	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
+		return -1;
 	}
 
-	clients[i].events |= events;
+	if (clients[sockfd].fd != sockfd) {
+		sock_warn(sockfd, "%s: sockfd(%d) not in poll",
+			  __func__, sockfd);
+		return -1;
+	}
+
+	clients[sockfd].events |= events;
+	poll_events_string(events, events_str);
+	sock_info(sockfd, "%s: %s", __func__, events_str);
+
 	return 0;
 }
 
 int poll_rm(int sockfd, short events)
 {
-	int i;
 	char events_str[42] = {'\0'};
 
-	poll_events_string(events, events_str);
-
-	/* i == 0 is listen sockfd, it's not needed to be checked by now */
-	for (i = 1; i < nfds; i++)
-		if (clients[i].fd == sockfd)
-			break;
-
-	if (i == nfds) {
-		sock_warn(sockfd, "%s: not found", __func__);
-		return poll_set(sockfd, events);
+	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
+		return -1;
 	}
 
-	clients[i].events &= ~events;
+	clients[sockfd].events &= ~events;
+	poll_events_string(events, events_str);
+	sock_info(sockfd, "%s: %s", __func__, events_str);
 
 	return 0;
 }
 
 int poll_del(int sockfd)
 {
-	int i;
-
-	for (i = 1; i < nfds; i++) {
-		if (clients[i].fd == sockfd) {
-			clients[i].fd = -1;
-			return 0;
-		}
-	}
-
-	pr_warn("%s: sockfd(%d) not in poll\n", __func__, sockfd);
-	return -1;
-}
-
-int get_events(int sockfd)
-{
-	int i;
-
-	/* i == 0 is listen sockfd, it's not needed to be checked by now */
-	for (i = 1; i < nfds; i++)
-		if (clients[i].fd == sockfd)
-			break;
-
-	if (i == nfds) {
-		sock_warn(sockfd, "%s: not in poll", __func__);
+	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
 		return -1;
 	}
 
-	return clients[i].events;
+	clients[sockfd].fd = -1;
+	sock_info(sockfd, "%s: deleted from poll", __func__);
+
+	return 0;
 }
 
 /**

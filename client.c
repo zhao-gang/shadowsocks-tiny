@@ -340,7 +340,7 @@ int main(int argc, char **argv)
 
 	while (1) {
 		pr_debug("start polling\n");
-		ret = poll(clients, nfds, TCP_INACTIVE_TIMEOUT * 1000);
+		ret = poll(clients, MAX_CONNECTION, TCP_INACTIVE_TIMEOUT * 1000);
 		if (ret == -1)
 			err_exit("poll error");
 		else if (ret == 0) {
@@ -365,7 +365,7 @@ int main(int argc, char **argv)
 			}
 		}
 
-		for (i = 1; i < nfds; i++) {
+		for (i = 1; i < MAX_CONNECTION; i++) {
 			sockfd = clients[i].fd;
 			if (sockfd == -1)
 				continue;
