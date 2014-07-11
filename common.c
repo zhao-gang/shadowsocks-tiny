@@ -35,7 +35,7 @@ static void usage_client(const char *name)
 	printf("\t-k,--password\t your password\n");
 	printf("\t-m,--method\t encryption algorithm\n");
 	printf("\t-d,--daemon\t run as daemon\n");
-	printf("\t-l,--log-level\t the log level [1-5]\n");
+	printf("\t-l,--log-level\t log level(0-7), default is LOG_NOTICE\n");
 	printf("\t-h,--help\t print this help\n");
 }
 
@@ -48,7 +48,7 @@ static void usage_server(const char *name)
 	printf("\t-k,--password\t your password\n");
 	printf("\t-m,--method\t encryption algorithm\n");
 	printf("\t-d,--daemon\t run as daemon\n");
-	printf("\t-l,--log-level\t the log level [1-5]\n");
+	printf("\t-l,--log-level\t log level(0-7), default is LOG_NOTICE\n");
 	printf("\t-h,--help\t print this help information\n");
 }
 
