@@ -198,14 +198,24 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 			daemonize = true;
 			break;
 		case 'l':
-			if (strcmp(optarg, "1") == 0)
-				level = LOG_WARNING;
+			if (strcmp(optarg, "0") == 0)
+				level = LOG_EMERG;
+			else if (strcmp(optarg, "1") == 0)
+				level = LOG_ALERT;
 			else if (strcmp(optarg, "2") == 0)
-				level = LOG_INFO;
+				level = LOG_CRIT;
 			else if (strcmp(optarg, "3") == 0)
+				level = LOG_ERR;
+			else if (strcmp(optarg, "4") == 0)
+				level = LOG_WARNING;
+			else if (strcmp(optarg, "5") == 0)
+				level = LOG_NOTICE;
+			else if (strcmp(optarg, "6") == 0)
+				level = LOG_INFO;
+			else if (strcmp(optarg, "7") == 0)
 				level = LOG_DEBUG;
 			else
-				level = LOG_WARNING;
+				level = LOG_NOTICE;
 
 			setlogmask(LOG_UPTO(level));
 			break;
