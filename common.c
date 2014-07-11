@@ -30,13 +30,12 @@ static void usage_client(const char *name)
 	printf("Options:\n");
 	printf("\t-s,--server\t server address\n");
 	printf("\t-p,--server-port server port\n");
-	printf("\t-l,--local\t local address\n");
-	printf("\t-b,--local-port\t local port\n");
+	printf("\t-u,--local\t local Used address\n");
+	printf("\t-b,--local-port\t local Binding port\n");
 	printf("\t-k,--password\t your password\n");
 	printf("\t-m,--method\t encryption algorithm\n");
 	printf("\t-d,--daemon\t run as daemon\n");
-	printf("\t-v,--verbose\t print verbose information\n");
-	printf("\t-vv\t\t print more verbose information\n");
+	printf("\t-l,--log-level\t the log level [1-5]\n");
 	printf("\t-h,--help\t print this help\n");
 }
 
@@ -49,8 +48,7 @@ static void usage_server(const char *name)
 	printf("\t-k,--password\t your password\n");
 	printf("\t-m,--method\t encryption algorithm\n");
 	printf("\t-d,--daemon\t run as daemon\n");
-	printf("\t-v,--verbose\t print verbose information\n");
-	printf("\t-vv\t\t print more verbose information\n");
+	printf("\t-l,--log-level\t the log level [1-5]\n");
 	printf("\t-h,--help\t print this help information\n");
 }
 
@@ -75,13 +73,12 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 	const char *optstring;
 	void (*usage)(const char *name);
 	struct option server_long_options[] = {
-		{"local", required_argument, 0, 'l'},
+		{"local", required_argument, 0, 'u'},
 		{"local-port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
 		{"daemon", no_argument, 0, 'd'},
-		{"verbose", no_argument, 0, 'v'},
-		{"config-file", required_argument, 0, 'c'},
+		{"log-level", no_argument, 0, 'l'},
 		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
@@ -89,24 +86,23 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 	struct option client_long_options[] = {
 		{"server", required_argument, 0, 's'},
 		{"server-port", required_argument, 0, 'p'},
-		{"local", required_argument, 0, 'l'},
+		{"local", required_argument, 0, 'u'},
 		{"local-port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
 		{"daemon", no_argument, 0, 'd'},
-		{"verbose", no_argument, 0, 'v'},
-		{"config-file", required_argument, 0, 'c'},
+		{"log-level", no_argument, 0, 'l'},
 		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
 
 	if (strcmp(type, "client") == 0) {
 		longopts = client_long_options;
-		optstring = "s:p:l:b:k:m:c:dvh";
+		optstring = "s:p:u:b:k:m:dl:h";
 		usage = usage_client;
 	} else if (strcmp(type, "server") == 0) {
 		longopts = server_long_options;
-		optstring = "l:b:k:m:c:dvh";
+		optstring = "u:b:k:m:dl:h";
 		usage = usage_server;
 	} else {
 		pr_warn("%s: unknown type\n", __func__);
