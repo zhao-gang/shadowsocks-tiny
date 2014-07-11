@@ -306,6 +306,8 @@ int main(int argc, char **argv)
 	if (check_ss_option(argc, argv, "client") != 0)
 		goto out;
 
+	openlog("sslocal", LOG_CONS | LOG_PERROR, LOG_DAEMON);
+
 	memset(&hint, 0, sizeof(hint));
 	hint.ai_family = AF_UNSPEC;
 	hint.ai_socktype = SOCK_STREAM;
@@ -316,7 +318,7 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	_pr_addrinfo("INFO", s_info, "server address", NULL);
+	pr_ai_notice(s_info, "server address");
 
 	ret = getaddrinfo(ss_opt.local, ss_opt.local_port, &hint, &l_info);
 	if (ret != 0) {
@@ -324,7 +326,7 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	_pr_addrinfo("INFO", l_info, "listening address", NULL);
+	pr_ai_notice(l_info, "listening address");
 
 	if (crypto_init(ss_opt.password, ss_opt.method) == -1) {
 		ret = -1;

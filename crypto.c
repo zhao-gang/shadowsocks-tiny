@@ -56,10 +56,11 @@ int get_method(char *password, char *method)
 	key[key_len] = '\0';
 	pr_data(stdout, "password", password, strlen(password));
 	pr_data(stdout, "key", key, key_len);
+
 	return 0;
 err:
-	pr_warn("%s: method %s is not supported\n", __func__, method);
-	return -1;
+	ERR_print_errors_fp(stderr);
+	pr_exit("%s: failed\n", __func__);
 }
 
 int crypto_init(char *password, char *method)

@@ -69,6 +69,7 @@ static void pr_ss_option(const char *type)
 static int parse_cmdline(int argc, char **argv, const char *type)
 {
 	int len, opt;
+	int level = -1;
 	struct option *longopts;
 	const char *optstring;
 	void (*usage)(const char *name);
@@ -149,7 +150,7 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 			}
 
 			break;
-		case 'l':
+		case 'u':
 			len = strlen(optarg);
 			if (len <= MAX_DOMAIN_LEN) {
 				strcpy(ss_opt.local, optarg);
@@ -193,14 +194,20 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 			}
 
 			break;
-		case 'v':
-			if (!verbose)
-				verbose = true;
-			else
-				debug = true;
-			break;
 		case 'd':
 			daemonize = true;
+			break;
+		case 'l':
+			if (strcmp(optarg, "1") == 0)
+				level = LOG_WARNING;
+			else if (strcmp(optarg, "2") == 0)
+				level = LOG_INFO;
+			else if (strcmp(optarg, "3") == 0)
+				level = LOG_DEBUG;
+			else
+				level = LOG_WARNING;
+
+			setlogmask(LOG_UPTO(level));
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -210,6 +217,9 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 			exit(EXIT_FAILURE);
 		}
 	}
+
+	if (level == -1)
+		setlogmask(LOG_UPTO(LOG_NOTICE));
 
 	return 0;
 }
@@ -224,8 +234,8 @@ int check_ss_option(int argc, char **argv, const char *type)
 		usage = usage_client;
 		if (strlen(ss_opt.server) == 0 ||
 		    strlen(ss_opt.server_port) == 0) {
-			pr_warn("Either server address or server port "
-				"is not specified\n");
+			printf("Either server address or server port "
+			       "is not specified\n");
 			goto err;
 		}
 	} else if (strcmp(type, "server") == 0) {
@@ -233,8 +243,8 @@ int check_ss_option(int argc, char **argv, const char *type)
 	}
 
 	if (strlen(ss_opt.local) == 0 || strlen(ss_opt.local_port) == 0) {
-		pr_warn("Either local address or local port "
-			"is not specified\n");
+		printf("Either local address or local port "
+		       "is not specified\n");
 		goto err;
 	}
 
@@ -251,14 +261,11 @@ err:
 
 void pr_data(FILE *fp, const char *name, char *data, int len)
 {
-	if (!debug)
-		return;
-
 	fprintf(fp, "%s:\n", name);
 	BIO_dump_fp(fp, (void *)data, len);
 }
 
-void _pr_link(const char *level, struct link *ln)
+void _pr_link(int level, struct link *ln)
 {
 	enum link_state state = ln->state;
 	char state_str[512] = {'\0'};
@@ -305,33 +312,31 @@ void _pr_link(const char *level, struct link *ln)
 	if (state & SERVER_SEND_PENDING)
 		strcat(state_str, ", server_send_pending");
 
-	printf("%s: state: %s\n"
-	       "%s: local sockfd: %d; server sockfd: %d; "
+	syslog(level, "state: %s\n", state_str);
+	syslog(level, "local sockfd: %d; server sockfd: %d; "
 	       "text len: %d; cipher len: %d;\n",
-	       level, state_str,
-	       level, ln->local_sockfd, ln->server_sockfd,
+	       ln->local_sockfd, ln->server_sockfd,
 	       ln->text_len, ln->cipher_len);
 }
 
 void pr_link_debug(struct link *ln)
 {
-	if (!debug)
-		return;
-
-	_pr_link("debug", ln);
+	_pr_link(LOG_DEBUG, ln);
 }
 
 void pr_link_info(struct link *ln)
 {
-	if (!verbose)
-		return;
+	_pr_link(LOG_INFO, ln);
+}
 
-	_pr_link("info", ln);
+void pr_link_notice(struct link *ln)
+{
+	_pr_link(LOG_NOTICE, ln);
 }
 
 void pr_link_warn(struct link *ln)
 {
-	_pr_link("WARNING", ln);
+	_pr_link(LOG_WARNING, ln);
 }
 
 void poll_init(void)

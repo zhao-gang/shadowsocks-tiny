@@ -1,64 +1,29 @@
+#include <errno.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <string.h>
-#include <errno.h>
-#include <netdb.h>
+#include <syslog.h>
 #include <arpa/inet.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 
 #include "log.h"
 
-bool debug;
-bool verbose;
-
-void pr_fun(const char *level, const char *fmt, va_list ap)
+static int _pr_addrinfo(int level, struct addrinfo *info,
+			const char *fmt, va_list ap)
 {
-	printf("%s: ", level);
-	vprintf(fmt, ap);
-}
-
-void pr_debug(const char *fmt, ...)
-{
-	va_list ap;
-
-	if (!debug)
-		return;
-
-	va_start(ap, fmt);
-	pr_fun("debug", fmt, ap);
-	va_end(ap);
-}
-
-void pr_info(const char *fmt, ...)
-{
-	va_list ap;
-
-	if (!verbose)
-		return;
-
-	va_start(ap, fmt);
-	pr_fun("info", fmt, ap);
-	va_end(ap);
-}
-
-int _pr_addrinfo(const char *level, struct addrinfo *info,
-		 const char *fmt, va_list ap)
-{
+	unsigned short port;
+	int offset;
+	char log[1024];
+	char addr[INET6_ADDRSTRLEN];
 	struct addrinfo *ai = info;
 	void *addrptr;
-	char addr[INET6_ADDRSTRLEN];
-	unsigned short port;
 
-	printf("%s: ", level);
-
-	if (ap == NULL) {
-		printf("%s:", fmt);
-	} else {
-		vprintf(fmt, ap);
-		printf(":");
-	}
+	vsprintf(log, fmt, ap);
+	strcat(log, ":");
+	offset = strlen(log);
 
 	while (ai) {
 		if (ai->ai_family == AF_INET) {
@@ -75,13 +40,14 @@ int _pr_addrinfo(const char *level, struct addrinfo *info,
 		}
 
 		if (ai->ai_socktype == SOCK_STREAM)
-			printf(" %s:%d(tcp)", addr, port);
+			sprintf(log + offset, " %s:%d(tcp)", addr, port);
 		else if (ai->ai_socktype == SOCK_DGRAM)
-			printf(" %s:%d(udp)", addr, port);
+			sprintf(log + offset, " %s:%d(udp)", addr, port);
 		ai = ai->ai_next;
 	}
 
-	printf("\n");
+	strcat(log, "\n");
+	syslog(level, "%s", log);
 
 	return 0;
 }
@@ -91,12 +57,9 @@ void pr_ai_debug(struct addrinfo *info, const char *fmt, ...)
 	int ret;
 	va_list ap;
 
-	if (!debug)
-		return;
-
 	va_start(ap, fmt);
 
-	ret = _pr_addrinfo("debug", info, fmt, ap);
+	ret = _pr_addrinfo(LOG_DEBUG, info, fmt, ap);
 	if (ret != 0)
 		pr_warn("%s: %s\n", __func__, strerror(ret));
 
@@ -108,26 +71,23 @@ void pr_ai_info(struct addrinfo *info, const char *fmt, ...)
 	int ret;
 	va_list ap;
 
-	if (!verbose)
-		return;
-
 	va_start(ap, fmt);
 
-	ret = _pr_addrinfo("info", info, fmt, ap);
+	ret = _pr_addrinfo(LOG_INFO, info, fmt, ap);
 	if (ret != 0)
 		pr_warn("%s: %s\n", __func__, strerror(ret));
 
 	va_end(ap);
 }
 
-void pr_ai_warn(struct addrinfo *info, const char *fmt, ...)
+void pr_ai_notice(struct addrinfo *info, const char *fmt, ...)
 {
 	int ret;
 	va_list ap;
 
 	va_start(ap, fmt);
 
-	ret = _pr_addrinfo("WARNING", info, fmt, ap);
+	ret = _pr_addrinfo(LOG_NOTICE, info, fmt, ap);
 	if (ret != 0)
 		pr_warn("%s: %s\n", __func__, strerror(ret));
 
@@ -165,15 +125,15 @@ static int get_sock_addr(int sockfd, char *str, int *port, const char *type)
 	return 0;
 
 err:
-	pr_info("%s: %s\n", __func__, strerror(errno));
 	return -1;
 }
 
-static void sock_print(int sockfd, char *level, const char *fmt, va_list ap)
+static void sock_print(int sockfd, int level, const char *fmt, va_list ap)
 {
-	int port;
+	int offset, port;
 	char *type;
 	char str[INET6_ADDRSTRLEN] = {'\0'};
+	char log[1024];
 
 	if (get_sock_addr(sockfd, str, &port, "peer") == 0)
 		type = "peer";
@@ -182,26 +142,25 @@ static void sock_print(int sockfd, char *level, const char *fmt, va_list ap)
 	else
 		type = "sockfd";
 		
-	printf("%s: ", level);
-	vprintf(fmt, ap);
+	vsprintf(log, fmt, ap);
+	offset = strlen(log);
 
 	if (strcmp(type, "peer") == 0)
-		printf("  (peer)%s:%d\n", str, port);
+		sprintf(log + offset, "  (peer)%s:%d\n", str, port);
 	else if (strcmp(type, "sock") == 0)
-		printf("  %s:%d\n", str, port);
+		sprintf(log + offset, "  %s:%d\n", str, port);
 	else if (strcmp(type, "sockfd") == 0)
-		printf("  (sockfd)%d\n", sockfd);
+		sprintf(log + offset, "  (sockfd)%d\n", sockfd);
+
+	syslog(level, "%s", log);
 }
 
 void sock_debug(int sockfd, const char *fmt, ...)
 {
 	va_list ap;
 
-	if (!debug)
-		return;
-
 	va_start(ap, fmt);
-	sock_print(sockfd, "debug", fmt, ap);
+	sock_print(sockfd, LOG_DEBUG, fmt, ap);
 	va_end(ap);
 }
 
@@ -209,11 +168,17 @@ void sock_info(int sockfd, const char *fmt, ...)
 {
 	va_list ap;
 
-	if (!verbose)
-		return;
+	va_start(ap, fmt);
+	sock_print(sockfd, LOG_INFO, fmt, ap);
+	va_end(ap);
+}
+
+void sock_notice(int sockfd, const char *fmt, ...)
+{
+	va_list ap;
 
 	va_start(ap, fmt);
-	sock_print(sockfd, "info", fmt, ap);
+	sock_print(sockfd, LOG_NOTICE, fmt, ap);
 	va_end(ap);
 }
 
@@ -222,6 +187,6 @@ void sock_warn(int sockfd, const char *fmt, ...)
 	va_list ap;
 
 	va_start(ap, fmt);
-	sock_print(sockfd, "WARNING", fmt, ap);
+	sock_print(sockfd, LOG_WARNING, fmt, ap);
 	va_end(ap);
 }

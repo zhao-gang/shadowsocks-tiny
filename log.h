@@ -1,27 +1,36 @@
 #ifndef SS_LOG_H
 #define SS_LOG_H
 
+#include <errno.h>
+#include <netdb.h>
+#include <string.h>
+#include <syslog.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
 
-extern bool debug;
-extern bool verbose;
+#define pr_debug(fmt, args...) do {\
+		syslog(LOG_DEBUG, fmt, ## args); } while (0)
+#define pr_info(fmt, args...) do {\
+		syslog(LOG_INFO, fmt, ## args); } while (0)
+#define pr_notice(fmt, args...) do {\
+		syslog(LOG_NOTICE, fmt, ## args); } while (0)
+#define pr_warn(fmt, args...) do {\
+		syslog(LOG_WARNING, fmt, ## args); } while (0)
+#define pr_err(fmt, args...) do {\
+		syslog(LOG_ERR, fmt, ## args); } while (0)
+#define pr_exit(fmt, args...) do {\
+		syslog(LOG_ERR, fmt, ## args); exit(EXIT_FAILURE); } while (0)
+#define err_exit(msg) do {\
+		syslog(LOG_ERR, "%s: %s", msg, strerror(errno));\
+		exit(EXIT_FAILURE); } while (0)
 
-#define pr_exit(fmt, args...) do \
-	{ printf(fmt, ## args); exit(EXIT_FAILURE); } while (0)
-#define err_exit(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
-#define pr_warn(fmt, args...) printf("WARNING: " fmt, ## args)
-
-void pr_debug(const char *fmt, ...);
-int _pr_addrinfo(const char *level, struct addrinfo *info,
-		 const char *fmt, va_list ap);
-void pr_info(const char *fmt, ...);
 void pr_ai_debug(struct addrinfo *info, const char *fmt, ...);
 void pr_ai_info(struct addrinfo *info, const char *fmt, ...);
+void pr_ai_notice(struct addrinfo *info, const char *fmt, ...);
 void pr_ai_warn(struct addrinfo *info, const char *fmt, ...);
 void sock_debug(int sockfd, const char *fmt, ...);
 void sock_info(int sockfd, const char *fmt, ...);
+void sock_notice(int sockfd, const char *fmt, ...);
 void sock_warn(int sockfd, const char *fmt, ...);
 
 #endif
