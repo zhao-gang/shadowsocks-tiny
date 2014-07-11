@@ -76,7 +76,6 @@ struct link {
 	void *cipher;
 	char local_iv[EVP_MAX_IV_LENGTH];
 	char server_iv[EVP_MAX_IV_LENGTH];
-	struct link *next;
 };
 
 #define SOCKS5_METHOD_NOT_REQUIRED 0x00
