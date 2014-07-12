@@ -11,17 +11,20 @@
 #include <arpa/inet.h>
 #include <openssl/evp.h>
 #include <openssl/bio.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
 #include "log.h"
 #include "common.h"
 
-struct pollfd *clients;
 static bool daemonize;
+int nfds = DEFAULT_MAX_CONNECTION;
+struct pollfd *clients;
 struct ss_option ss_opt;
-struct link *link_head[MAX_CONNECTION];
+struct link **link_head;
 
 static void usage_client(const char *name)
 {
@@ -365,17 +368,40 @@ void pr_link_warn(struct link *ln)
 	_pr_link(LOG_WARNING, ln);
 }
 
-void poll_init(void)
+void ss_init(void)
 {
-	int i;
+	int i, ret;
+	struct rlimit limit;
 
-	clients = calloc(MAX_CONNECTION, sizeof(struct pollfd));
+	ret = getrlimit(RLIMIT_NOFILE, &limit);
+	if (ret == -1) {
+		pr_err("%s: %s\n", __func__, strerror(errno));
+	} else {
+		if (limit.rlim_cur < DEFAULT_MAX_CONNECTION)
+			nfds = limit.rlim_cur;
+	}
+
+	pr_info("%s: max connection: %d\n", __func__, nfds);
+
+	link_head = calloc(nfds, sizeof(void *));
+	if (link_head == NULL)
+		pr_exit("%s: calloc failed", __func__);
+
+	clients = calloc(nfds, sizeof(struct pollfd));
 	if (clients == NULL)
 		pr_exit("%s: calloc failed", __func__);
 
-
-	for (i = 0; i < MAX_CONNECTION; i++)
+	for (i = 0; i < nfds; i++)
 		clients[i].fd = -1;
+}
+
+void ss_exit(void)
+{
+	if (link_head)
+		free(link_head);
+
+	if (clients)
+		free(clients);
 }
 
 void poll_events_string(short events, char *events_str)
@@ -399,7 +425,7 @@ int poll_set(int sockfd, short events)
 {
 	char events_str[42] = {'\0'};
 
-	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+	if (sockfd < 0 || sockfd >= nfds) {
 		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
 		return -1;
 	}
@@ -416,7 +442,7 @@ int poll_add(int sockfd, short events)
 {
 	char events_str[42] = {'\0'};
 
-	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+	if (sockfd < 0 || sockfd >= nfds) {
 		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
 		return -1;
 	}
@@ -438,7 +464,7 @@ int poll_rm(int sockfd, short events)
 {
 	char events_str[42] = {'\0'};
 
-	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+	if (sockfd < 0 || sockfd >= nfds) {
 		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
 		return -1;
 	}
@@ -452,7 +478,7 @@ int poll_rm(int sockfd, short events)
 
 int poll_del(int sockfd)
 {
-	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+	if (sockfd < 0 || sockfd >= nfds) {
 		sock_err(sockfd, "%s: illegal sockfd(%d)", __func__, sockfd);
 		return -1;
 	}
@@ -496,7 +522,7 @@ void reaper(void)
 		checked = now;
 	}
 
-	for (sockfd = 0; sockfd < MAX_CONNECTION; sockfd++) {
+	for (sockfd = 0; sockfd < nfds; sockfd++) {
 		ln = link_head[sockfd];
 		if (ln == NULL)
 			continue;
@@ -583,7 +609,7 @@ err:
 
 struct link *get_link(int sockfd)
 {
-	if (sockfd < 0 || sockfd >= MAX_CONNECTION) {
+	if (sockfd < 0 || sockfd >= nfds) {
 		pr_warn("%s: invalid sockfd %d", __func__, sockfd);
 		return NULL;
 	}

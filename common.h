@@ -18,7 +18,7 @@
 
 #define TCP_INACTIVE_TIMEOUT 120
 #define TCP_CONNECT_TIMEOUT 15
-#define MAX_CONNECTION 1024
+#define DEFAULT_MAX_CONNECTION 1024
 #define TEXT_BUF_SIZE (1024 * 8)
 #define CIPHER_BUF_SIZE (TEXT_BUF_SIZE + EVP_MAX_BLOCK_LENGTH + \
 			 EVP_MAX_IV_LENGTH)
@@ -130,16 +130,18 @@ struct ss_header {
 	 char dst[];
 };
 
+extern int nfds;
 extern struct pollfd *clients;
 extern struct ss_option ss_opt;
-extern struct link *link_head[MAX_CONNECTION];
+extern struct link **link_head;
 
 void check_ss_option(int argc, char **argv, const char *type);
 void pr_data(FILE *fp, const char *name, char *data, int len);
 void pr_link_debug(struct link *ln);
 void pr_link_info(struct link *ln);
 void pr_link_warn(struct link *ln);
-void poll_init(void);
+void ss_init(void);
+void ss_exit(void);
 int poll_set(int sockfd, short events);
 int poll_add(int sockfd, short events);
 int poll_rm(int sockfd, short events);

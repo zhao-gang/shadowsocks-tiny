@@ -218,8 +218,8 @@ int main(int argc, char **argv)
 	int i, listenfd, sockfd;
 	int ret = 0;
 	struct link *ln;
-	struct addrinfo *s_info = NULL;
-	struct addrinfo *l_info = NULL;
+	struct addrinfo *local_ai_tcp = NULL;
+	struct addrinfo *local_ai_udp = NULL;
 	struct addrinfo hint;
 
 	check_ss_option(argc, argv, "server");
@@ -229,31 +229,42 @@ int main(int argc, char **argv)
 	hint.ai_socktype = SOCK_STREAM;
 
 	ret = getaddrinfo(ss_opt.local_addr, ss_opt.local_port,
-			  &hint, &l_info);
+			  &hint, &local_ai_tcp);
 	if (ret != 0) {
 		printf("getaddrinfo error: %s\n", gai_strerror(ret));
 		ret = -1;
 		goto out;
 	}
 
-	pr_ai_notice(l_info, "listening address:");
+	pr_ai_notice(local_ai_tcp, "listening tcp address");
+
+	hint.ai_socktype = SOCK_DGRAM;
+	ret = getaddrinfo(ss_opt.local_addr, ss_opt.local_port,
+			  &hint, &local_ai_udp);
+	if (ret != 0) {
+		printf("getaddrinfo error: %s\n", gai_strerror(ret));
+		ret = -1;
+		goto out;
+	}
+
+	pr_ai_notice(local_ai_udp, "udp address");
 
 	if (crypto_init(ss_opt.password, ss_opt.method) == -1) {
 		ret = -1;
 		goto out;
 	}
 
-	poll_init();
-	listenfd = do_listen(l_info, "tcp");
+	ss_init();
+	listenfd = do_listen(local_ai_tcp, "tcp");
 	clients[0].fd = listenfd;
 	clients[0].events = POLLIN;
-	listenfd = do_listen(l_info, "udp");
+	listenfd = do_listen(local_ai_udp, "udp");
 	clients[1].fd = listenfd;
 	clients[1].events = POLLIN;
 
 	while (1) {
 		pr_debug("start polling\n");
-		ret = poll(clients, MAX_CONNECTION, TCP_INACTIVE_TIMEOUT * 1000);
+		ret = poll(clients, nfds, TCP_INACTIVE_TIMEOUT * 1000);
 		if (ret == -1) {
 			err_exit("poll error");
 		} else if (ret == 0) {
@@ -284,7 +295,7 @@ int main(int argc, char **argv)
 			/* } */
 		}
 
-		for (i = 2; i < MAX_CONNECTION; i++) {
+		for (i = 2; i < nfds; i++) {
 			sockfd = clients[i].fd;
 			if (sockfd == -1)
 				continue;
@@ -325,12 +336,14 @@ int main(int argc, char **argv)
 
 out:
 	crypto_exit();
-	if (s_info)
-		freeaddrinfo(s_info);
-	if (l_info)
-		freeaddrinfo(l_info);
 
-	free(clients);
+	if (local_ai_tcp)
+		freeaddrinfo(local_ai_tcp);
+
+	if (local_ai_udp)
+		freeaddrinfo(local_ai_udp);
+
+	ss_exit();
 
 	if (ret == -1)
 		exit(EXIT_FAILURE);
