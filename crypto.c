@@ -54,8 +54,8 @@ int get_method(char *password, char *method)
 		goto err;
 
 	key[key_len] = '\0';
-	pr_data(stdout, "password", password, strlen(password));
-	pr_data(stdout, "key", key, key_len);
+	/* pr_data(stdout, "password", password, strlen(password)); */
+	/* pr_data(stdout, "key", key, key_len); */
 
 	return 0;
 err:
