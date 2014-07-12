@@ -231,7 +231,8 @@ int main(int argc, char **argv)
 	hint.ai_family = AF_UNSPEC;
 	hint.ai_socktype = SOCK_STREAM;
 
-	ret = getaddrinfo(ss_opt.local, ss_opt.local_port, &hint, &l_info);
+	ret = getaddrinfo(ss_opt.local_addr, ss_opt.local_port,
+			  &hint, &l_info);
 	if (ret != 0) {
 		printf("getaddrinfo error: %s\n", gai_strerror(ret));
 		ret = -1;

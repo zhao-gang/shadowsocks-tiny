@@ -28,8 +28,8 @@
 #define MAX_METHOD_NAME_LEN 16
 
 struct ss_option {
-	char server[MAX_DOMAIN_LEN + 1];
-	char local[MAX_DOMAIN_LEN + 1];
+	char server_addr[MAX_DOMAIN_LEN + 1];
+	char local_addr[MAX_DOMAIN_LEN + 1];
 	char server_port[MAX_PORT_STRING_LEN + 1];
 	char local_port[MAX_PORT_STRING_LEN + 1];
 	char password[MAX_PWD_LEN + 1];

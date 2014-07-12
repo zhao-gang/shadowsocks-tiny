@@ -57,7 +57,7 @@ static void pr_ss_option(const char *type)
 	char *server_port = NULL;
 
 	if (strcmp(type, "client") == 0) {
-		server = ss_opt.server;
+		server = ss_opt.server_addr;
 		server_port = ss_opt.server_port;
 	}
 
@@ -67,7 +67,7 @@ static void pr_ss_option(const char *type)
 		"password: %s\n"
 		"method: %s\n",
 		server, server_port,
-		ss_opt.local, ss_opt.local_port,
+		ss_opt.local_addr, ss_opt.local_port,
 		ss_opt.password, ss_opt.method);
 }
 
@@ -130,11 +130,11 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 
 			len = strlen(optarg);
 			if (len <= MAX_DOMAIN_LEN) {
-				strcpy(ss_opt.server, optarg);
+				strcpy(ss_opt.server_addr, optarg);
 			} else {
-				strncpy(ss_opt.server, optarg,
+				strncpy(ss_opt.server_addr, optarg,
 					MAX_DOMAIN_LEN);
-				ss_opt.server[MAX_DOMAIN_LEN] = '\0';
+				ss_opt.server_addr[MAX_DOMAIN_LEN] = '\0';
 			}
 
 			break;
@@ -158,11 +158,11 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 		case 'u':
 			len = strlen(optarg);
 			if (len <= MAX_DOMAIN_LEN) {
-				strcpy(ss_opt.local, optarg);
+				strcpy(ss_opt.local_addr, optarg);
 			} else {
-				strncpy(ss_opt.local, optarg,
+				strncpy(ss_opt.local_addr, optarg,
 					MAX_DOMAIN_LEN);
-				ss_opt.local[MAX_DOMAIN_LEN] = '\0';
+				ss_opt.local_addr[MAX_DOMAIN_LEN] = '\0';
 			}
 
 			break;
@@ -247,7 +247,7 @@ int check_ss_option(int argc, char **argv, const char *type)
 
 	if (strcmp(type, "client") == 0) {
 		usage = usage_client;
-		if (strlen(ss_opt.server) == 0 ||
+		if (strlen(ss_opt.server_addr) == 0 ||
 		    strlen(ss_opt.server_port) == 0) {
 			pr_err("Either server address or server port "
 			       "is not specified\n");
@@ -257,7 +257,7 @@ int check_ss_option(int argc, char **argv, const char *type)
 		usage = usage_server;
 	}
 
-	if (strlen(ss_opt.local) == 0 || strlen(ss_opt.local_port) == 0) {
+	if (strlen(ss_opt.local_addr) == 0 || strlen(ss_opt.local_port) == 0) {
 		pr_err("Either local address or local port "
 		       "is not specified\n");
 		goto err;

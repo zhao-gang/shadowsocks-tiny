@@ -312,7 +312,8 @@ int main(int argc, char **argv)
 	hint.ai_family = AF_UNSPEC;
 	hint.ai_socktype = SOCK_STREAM;
 
-	ret = getaddrinfo(ss_opt.server, ss_opt.server_port, &hint, &s_info);
+	ret = getaddrinfo(ss_opt.server_addr, ss_opt.server_port,
+			  &hint, &s_info);
 	if (ret != 0) {
 		pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 		goto out;
@@ -320,7 +321,7 @@ int main(int argc, char **argv)
 
 	pr_ai_notice(s_info, "server address");
 
-	ret = getaddrinfo(ss_opt.local, ss_opt.local_port, &hint, &l_info);
+	ret = getaddrinfo(ss_opt.local_addr, ss_opt.local_port, &hint, &l_info);
 	if (ret != 0) {
 		pr_warn("getaddrinfo error: %s\n", gai_strerror(ret));
 		goto out;
