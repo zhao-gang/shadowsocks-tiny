@@ -303,10 +303,10 @@ int main(int argc, char **argv)
 	struct addrinfo *l_info = NULL;
 	struct addrinfo hint;
 
+	openlog("sslocal", LOG_CONS, LOG_DAEMON);
+
 	if (check_ss_option(argc, argv, "client") != 0)
 		goto out;
-
-	openlog("sslocal", LOG_CONS | LOG_PERROR, LOG_DAEMON);
 
 	memset(&hint, 0, sizeof(hint));
 	hint.ai_family = AF_UNSPEC;

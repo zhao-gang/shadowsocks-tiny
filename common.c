@@ -25,44 +25,50 @@ struct link *link_head[MAX_CONNECTION];
 
 static void usage_client(const char *name)
 {
-	printf("Usage: %s [options]\n", name);
-	printf("Options:\n");
-	printf("\t-s,--server\t server address\n");
-	printf("\t-p,--server-port server port\n");
-	printf("\t-u,--local\t local Used address\n");
-	printf("\t-b,--local-port\t local Binding port\n");
-	printf("\t-k,--password\t your password\n");
-	printf("\t-m,--method\t encryption algorithm\n");
-	printf("\t-d,--daemon\t run as daemon\n");
-	printf("\t-l,--log-level\t log level(0-7), default is LOG_NOTICE\n");
-	printf("\t-h,--help\t print this help\n");
+	pr_err("Usage: %s [options]\n"
+	       "Options:\n"
+	       "\t-s,--server\t server address\n"
+	       "\t-p,--server-port server port\n"
+	       "\t-u,--local\t local Used address\n"
+	       "\t-b,--local-port\t local Binding port\n"
+	       "\t-k,--password\t your password\n"
+	       "\t-m,--method\t encryption algorithm\n"
+	       "\t-d,--daemon\t run as daemon\n"
+	       "\t-l,--log-level\t log level(0-7), default is LOG_NOTICE\n"
+	       "\t-h,--help\t print this help\n", name);
 }
 
 static void usage_server(const char *name)
 {
-	printf("Usage: %s [options]\n", name);
-	printf("Options:\n");
-	printf("\t-l,--local\t local address\n");
-	printf("\t-b,--local-port\t local port\n");
-	printf("\t-k,--password\t your password\n");
-	printf("\t-m,--method\t encryption algorithm\n");
-	printf("\t-d,--daemon\t run as daemon\n");
-	printf("\t-l,--log-level\t log level(0-7), default is LOG_NOTICE\n");
-	printf("\t-h,--help\t print this help information\n");
+	pr_err("Usage: %s [options]\n"
+	       "Options:\n"
+	       "\t-l,--local\t local address\n"
+	       "\t-b,--local-port\t local port\n"
+	       "\t-k,--password\t your password\n"
+	       "\t-m,--method\t encryption algorithm\n"
+	       "\t-d,--daemon\t run as daemon\n"
+	       "\t-l,--log-level\t log level(0-7), default is LOG_NOTICE\n"
+	       "\t-h,--help\t print this help information\n", name);
 }
 
 static void pr_ss_option(const char *type)
 {
-	pr_info("Options:\n");
+	char *server = NULL;
+	char *server_port = NULL;
 
-	if (strcmp(type, "client") == 0)
-		pr_info("server address: %s, server port: %s\n",
-			ss_opt.server, ss_opt.server_port);
+	if (strcmp(type, "client") == 0) {
+		server = ss_opt.server;
+		server_port = ss_opt.server_port;
+	}
 
-	pr_info("local address: %s, local port: %s\n",
-		ss_opt.local, ss_opt.local_port);
-	pr_info("password: %s\n", ss_opt.password);
-	pr_info("method: %s\n", ss_opt.method);
+	pr_info("Options:\n"
+		"server address: %s, server port: %s\n"
+		"local address: %s, local port: %s\n"
+		"password: %s\n"
+		"method: %s\n",
+		server, server_port,
+		ss_opt.local, ss_opt.local_port,
+		ss_opt.password, ss_opt.method);
 }
 
 static int parse_cmdline(int argc, char **argv, const char *type)
@@ -243,7 +249,7 @@ int check_ss_option(int argc, char **argv, const char *type)
 		usage = usage_client;
 		if (strlen(ss_opt.server) == 0 ||
 		    strlen(ss_opt.server_port) == 0) {
-			printf("Either server address or server port "
+			pr_err("Either server address or server port "
 			       "is not specified\n");
 			goto err;
 		}
@@ -252,15 +258,16 @@ int check_ss_option(int argc, char **argv, const char *type)
 	}
 
 	if (strlen(ss_opt.local) == 0 || strlen(ss_opt.local_port) == 0) {
-		printf("Either local address or local port "
+		pr_err("Either local address or local port "
 		       "is not specified\n");
 		goto err;
 	}
 
-	if (daemonize)
-		daemon(0, 1);
+	if (daemonize) {
+		if (daemon(0, 0) == -1)
+			pr_exit("daemon failed: %s\n", strerror(errno));
+	}
 
-	pr_info("%s: The final option:\n", __func__);
 	pr_ss_option(type);
 	return 0;
 err:
