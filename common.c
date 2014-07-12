@@ -20,6 +20,7 @@
 
 struct pollfd *clients;
 static bool daemonize;
+static int log_opt = LOG_CONS | LOG_PERROR;
 struct ss_option ss_opt;
 struct link *link_head[MAX_CONNECTION];
 
@@ -71,33 +72,100 @@ static void pr_ss_option(const char *type)
 		ss_opt.password, ss_opt.method);
 }
 
-static int parse_cmdline(int argc, char **argv, const char *type)
+static void parse_log_option(int argc, char **argv, const char *type)
+{
+	int opt;
+	int level = -1;
+	const char *optstring = "s:p:u:b:k:m:dl:h";
+
+	struct option long_options[] = {
+		{"server_addr", required_argument, 0, 's'},
+		{"server_port", required_argument, 0, 'p'},
+		{"local_addr", required_argument, 0, 'u'},
+		{"local_port", required_argument, 0, 'b'},
+		{"password", required_argument, 0, 'k'},
+		{"method", required_argument, 0, 'm'},
+		{"daemon", no_argument, 0, 'd'},
+		{"log_level", no_argument, 0, 'l'},
+		{"help", no_argument, 0, 'h'},
+		{0, 0, 0, 0}
+	};
+
+	while (1) {
+		opt = getopt_long(argc, argv, optstring, long_options, NULL);
+		if (opt == -1)
+			break;
+
+		switch (opt) {
+		case 'd':
+			daemonize = true;
+			log_opt &= ~LOG_PERROR;
+			break;
+		case 'l':
+			if (strcmp(optarg, "0") == 0)
+				level = LOG_EMERG;
+			else if (strcmp(optarg, "1") == 0)
+				level = LOG_ALERT;
+			else if (strcmp(optarg, "2") == 0)
+				level = LOG_CRIT;
+			else if (strcmp(optarg, "3") == 0)
+				level = LOG_ERR;
+			else if (strcmp(optarg, "4") == 0)
+				level = LOG_WARNING;
+			else if (strcmp(optarg, "5") == 0)
+				level = LOG_NOTICE;
+			else if (strcmp(optarg, "6") == 0)
+				level = LOG_INFO;
+			else if (strcmp(optarg, "7") == 0)
+				level = LOG_DEBUG;
+			else
+				level = LOG_NOTICE;
+
+			setlogmask(LOG_UPTO(level));
+			break;
+		}
+	}
+
+	if (strcmp(type, "client") == 0)
+		openlog("sslocal", log_opt, LOG_DAEMON);
+	else if (strcmp(type, "server") == 0)
+		openlog("sserver", log_opt, LOG_DAEMON);
+
+	if (level == -1)
+		level = LOG_NOTICE;
+
+	setlogmask(LOG_UPTO(level));
+
+	optind = 1;
+}
+
+static void parse_cmdline(int argc, char **argv, const char *type)
 {
 	int len, opt;
-	int level = -1;
 	struct option *longopts;
 	const char *optstring;
 	void (*usage)(const char *name);
 	struct option server_long_options[] = {
-		{"local", required_argument, 0, 'u'},
-		{"local-port", required_argument, 0, 'b'},
+		{"local_addr", required_argument, 0, 'u'},
+		{"local_port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
 		{"daemon", no_argument, 0, 'd'},
-		{"log-level", no_argument, 0, 'l'},
+		{"log_level", no_argument, 0, 'l'},
 		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
 
 	struct option client_long_options[] = {
-		{"server", required_argument, 0, 's'},
-		{"server-port", required_argument, 0, 'p'},
-		{"local", required_argument, 0, 'u'},
-		{"local-port", required_argument, 0, 'b'},
+		{"server_addr", required_argument, 0, 's'},
+		{"server_port", required_argument, 0, 'p'},
+		{"local_addr", required_argument, 0, 'u'},
+		{"local_port", required_argument, 0, 'b'},
 		{"password", required_argument, 0, 'k'},
 		{"method", required_argument, 0, 'm'},
 		{"daemon", no_argument, 0, 'd'},
-		{"log-level", no_argument, 0, 'l'},
+		{"log_level", no_argument, 0, 'l'},
+		{"log_stderr", no_argument, 0, 'L'},
 		{"help", no_argument, 0, 'h'},
 		{0, 0, 0, 0}
 	};
@@ -111,8 +179,7 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 		optstring = "u:b:k:m:dl:h";
 		usage = usage_server;
 	} else {
-		pr_warn("%s: unknown type\n", __func__);
-		return -1;
+		pr_exit("%s: unknown type\n", __func__);
 	}
 
 	while (1) {
@@ -199,31 +266,6 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 			}
 
 			break;
-		case 'd':
-			daemonize = true;
-			break;
-		case 'l':
-			if (strcmp(optarg, "0") == 0)
-				level = LOG_EMERG;
-			else if (strcmp(optarg, "1") == 0)
-				level = LOG_ALERT;
-			else if (strcmp(optarg, "2") == 0)
-				level = LOG_CRIT;
-			else if (strcmp(optarg, "3") == 0)
-				level = LOG_ERR;
-			else if (strcmp(optarg, "4") == 0)
-				level = LOG_WARNING;
-			else if (strcmp(optarg, "5") == 0)
-				level = LOG_NOTICE;
-			else if (strcmp(optarg, "6") == 0)
-				level = LOG_INFO;
-			else if (strcmp(optarg, "7") == 0)
-				level = LOG_DEBUG;
-			else
-				level = LOG_NOTICE;
-
-			setlogmask(LOG_UPTO(level));
-			break;
 		case 'h':
 			usage(argv[0]);
 			exit(EXIT_SUCCESS);
@@ -232,17 +274,13 @@ static int parse_cmdline(int argc, char **argv, const char *type)
 			exit(EXIT_FAILURE);
 		}
 	}
-
-	if (level == -1)
-		setlogmask(LOG_UPTO(LOG_NOTICE));
-
-	return 0;
 }
 
-int check_ss_option(int argc, char **argv, const char *type)
+void check_ss_option(int argc, char **argv, const char *type)
 {
 	void (*usage)(const char *name);
 
+	parse_log_option(argc, argv, type);
 	parse_cmdline(argc, argv, type);
 
 	if (strcmp(type, "client") == 0) {
@@ -269,10 +307,10 @@ int check_ss_option(int argc, char **argv, const char *type)
 	}
 
 	pr_ss_option(type);
-	return 0;
+	return;
 err:
 	usage(argv[0]);
-	return -1;
+	exit(EXIT_FAILURE);
 }
 
 void pr_data(FILE *fp, const char *name, char *data, int len)

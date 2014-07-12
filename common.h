@@ -134,7 +134,7 @@ extern struct pollfd *clients;
 extern struct ss_option ss_opt;
 extern struct link *link_head[MAX_CONNECTION];
 
-int check_ss_option(int argc, char **argv, const char *type);
+void check_ss_option(int argc, char **argv, const char *type);
 void pr_data(FILE *fp, const char *name, char *data, int len);
 void pr_link_debug(struct link *ln);
 void pr_link_info(struct link *ln);
