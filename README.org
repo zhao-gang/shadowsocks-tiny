@@ -1,1 +1,4 @@
-* shadowsocks for router
+* shadowsocks client for router
+** LICENSE
+   MIT
+

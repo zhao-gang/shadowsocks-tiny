@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2014 Zhao, Gang <gang.zhao.42@gmail.com>
+ * This is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See COPYING for details.
+ */
+
 #ifndef SS_CRYPTO_H
 #define SS_CRYPTO_H
 
