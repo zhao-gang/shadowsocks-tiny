@@ -122,6 +122,8 @@ static int get_sock_addr(int sockfd, char *str, int *port, const char *type)
 	} else if (ss_addr.ss_family == AF_INET6) {
 		addrptr = &((struct sockaddr_in6 *)&ss_addr)->sin6_addr;
 		*port = ntohs(((struct sockaddr_in6 *)&ss_addr)->sin6_port);
+	} else {
+		pr_exit("%s: unsupported address family\n", __func__);
 	}
 
 	if (inet_ntop(ss_addr.ss_family, addrptr, str,

@@ -274,6 +274,8 @@ void check_ss_option(int argc, char **argv, const char *type)
 		}
 	} else if (strcmp(type, "server") == 0) {
 		usage = usage_server;
+	} else {
+		pr_exit("%s: unknown type\n", __func__);
 	}
 
 	if (strlen(ss_opt.local_addr) == 0 || strlen(ss_opt.local_port) == 0) {
