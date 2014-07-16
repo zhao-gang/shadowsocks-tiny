@@ -36,7 +36,7 @@ static void usage_client(const char *name)
 {
 	pr_err("Usage: %s [options]\n"
 	       "Options:\n"
-	       "\t-s,--server_addr\t server address\n"
+	       "\t-s,--server_addr server address\n"
 	       "\t-p,--server_port server port\n"
 	       "\t-u,--local_addr\t local Used address\n"
 	       "\t-b,--local_port\t local Binding port\n"
