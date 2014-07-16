@@ -1,0 +1,40 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2006-2012 OpenWrt.org
+# Copyright (C) 2014 Zhao, Gang <gang.zhao.42@gmail.com>
+
+START=99
+
+PROG=/usr/bin/sslocal
+NAME=sslocal
+
+sslocal_instance() {
+	local section="$1"
+	local val
+
+	config_get var "${section}" server_addr
+	append args "-s ${var}"
+	config_get var "${section}" server_port
+	append args "-p ${var}"
+	config_get var "${section}" local_addr
+	append args "-u ${var}"
+	config_get var "${section}" local_port
+	append args "-b ${var}"
+	config_get var "${section}" password
+	append args "-k ${var}"
+	config_get var "${section}" method
+	append args "-m ${var}"
+	config_get var "${section}" log_level 5
+	append args "-l ${var}"
+	append args "-d"
+	service_start ${PROG} ${args}
+}
+
+start() {
+	config_load "${NAME}"
+
+	config_foreach sslocal_instance sslocal
+}
+
+stop() {
+	service_stop ${PROG}
+}
