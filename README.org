@@ -53,6 +53,12 @@
    If all seem okay, run =/etc/init.d/sslocal enable= to let
    shadowsocks-client automatically starts when your router boots.
 
+** Note
+   Although shadowsocks-tiny has a server side program, it's mainly
+   for test purpose, it doesn't scale well. You can find other fancy
+   server side programs of shadowsocks from
+   [[https://github.com/clowwindy/shadowsocks/wiki/Ports-and-Clients]]
+
 ** Report bugs
    Please submit your bug report to
    [[https://github.com/zhao-gang/shadowsocks-tiny/issues]]
