@@ -8,9 +8,9 @@
    shadowsocks-tiny source code. Subdirectory =AA= is for Attitude
    Adjustment(12.09), subdirectory =current= is for latest OpenWrt
    release(which uses [[http://wiki.openwrt.org/doc/techref/procd][procd]]). If you can't find the package for your
-   route's architecture, you need to compile it by yourself(and if you
-   successfully compiled and tested it works, please send the .ipk to
-   me, so I can include it here).
+   router's architecture, you need to compile it by yourself(and if
+   you successfully compiled and tested it works, please send the .ipk
+   to me, so I can include it here).
 
    - Compile from SDK
 
@@ -47,6 +47,11 @@
    Shadowsocks-client uses [[http://wiki.openwrt.org/doc/uci][uci]] as its configuration method. You have
    to edit =/etc/config/sslocal= to meet your needs.
 
+   Hint: =server_addr= and =server_port= is your shadowsocks server's
+   listening address and port. =local_addr= is your router's
+   address(e.g. 192.168.X.X) and =local_port= is the port number you
+   want your router to listen.
+
    After editing =/etc/config/sslocal=, run =/etc/init.d/sslocal
    start= to execute sslocal, and use =logread= to see if it works.
    Normally it will show:
@@ -57,6 +62,12 @@
 
    If all seem okay, run =/etc/init.d/sslocal enable= to let
    shadowsocks-client automatically starts when your router boots.
+
+   - Host setting
+
+     Set your browser or program to use socks5 proxy, and put
+     =local_addr= and =local_port= as the socks5 server's addresss and
+     port number.
 
 ** Note
    Although shadowsocks-tiny has a server side program, it's mainly
