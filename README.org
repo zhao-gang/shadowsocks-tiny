@@ -4,8 +4,13 @@
    This is a tiny [[https://github.com/clowwindy/shadowsocks/wiki][shadowsocks]] client for router(OpenWrt).
 
 ** Install
-   Currently pre-compiled packages are not provided, so you have to
-   compile it by yourself.
+   Pre-compiled .ipk packages can be found in =bin= directory of the
+   shadowsocks-tiny source code. Subdirectory =AA= is for Attitude
+   Adjustment(12.09), subdirectory =current= is for latest OpenWrt
+   release(which uses [[http://wiki.openwrt.org/doc/techref/procd][procd]]). If you can't find the package for your
+   route's architecture, you need to compile it by yourself(and if you
+   successfully compiled and tested it works, please send the .ipk to
+   me, so I can include it here).
 
    - Compile from SDK
 
@@ -55,7 +60,7 @@
 
 ** Note
    Although shadowsocks-tiny has a server side program, it's mainly
-   for test purpose, it doesn't scale well. You can find other fancy
+   for test purpose and doesn't scale well. You can find other fancy
    server side programs of shadowsocks from
    [[https://github.com/clowwindy/shadowsocks/wiki/Ports-and-Clients]]
 
