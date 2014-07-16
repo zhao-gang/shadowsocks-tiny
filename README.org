@@ -1,4 +1,53 @@
-* shadowsocks client for router
-** LICENSE
-   MIT
+* shadowsocks-tiny
 
+** What
+   This is a tiny [[https://github.com/clowwindy/shadowsocks/wiki][shadowsocks]] client for router(OpenWrt).
+
+** Install
+   Currently pre-compiled packages are not provided, so you have to
+   compile it by yourself.
+
+   Shadowsocks-tiny depends on libopenssl, so you have to install
+   libopenssl on your router first.
+
+   - Compile from SDK
+
+     There is a help page about using the SDK:
+     [[http://wiki.openwrt.org/doc/howto/obtain.firmware.sdk[]]
+
+     Packages are under =packages= directory of the shadowsocks-tiny
+     source code. =./packages/shadowsocks-client-AA= is for Attitude
+     Adjustment(12.09), and =./packages/shadowsocks-client= is for
+     latest OpenWrt(which uses [[http://wiki.openwrt.org/doc/techref/procd][procd]]). Actually the only difference of
+     these two packages is the init script. Select the right package
+     for your SDK, and copy it to =packages= directory of your SDK, then
+     compile.
+
+   - Compile from OpenWrt souce
+
+     You can add shadowsocks-client from packages feed:
+     =./scripts/feeds update packages=
+     =./scripts/feeds install shadowsocks-client=
+
+     Then select shadowsocks-client from =make menuconfig= and compile.
+
+** Config
+   Shadowsocks-client uses [[http://wiki.openwrt.org/doc/uci][uci]] as its configuration method. You have
+   to edit =/etc/config/sslocal= to meet your needs.
+
+   After editing =/etc/config/sslocal=, run =/etc/init.d/sslocal
+   start= to execute sslocal, and use =logread= to see if it works.
+   Normally it will show:
+
+   =Wed Jul 16 03:17:28 2014 daemon.notice sslocal: server address: XXX.XXX.XXX.XXX:XXXXX(tcp)=
+   =Wed Jul 16 03:17:28 2014 daemon.notice sslocal: listening address: XXX.XXX.XXX.XXX:XXXXX(tcp)=
+
+   If all seem okay, run =/etc/init.d/sslocal enable= to let
+   shadowsocks-client automatically starts when your router boots.
+
+** Report bugs
+   Please submit your bug report to
+   [[https://github.com/zhao-gang/shadowsocks-tiny/issues][]].
+
+** License
+   MIT, see COPYING for details.
