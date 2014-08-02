@@ -31,6 +31,7 @@ int nfds = DEFAULT_MAX_CONNECTION;
 struct pollfd *clients;
 struct ss_option ss_opt;
 struct link **link_head;
+struct addrinfo *server_ai;
 
 static void usage_client(const char *name)
 {
@@ -584,6 +585,7 @@ struct link *create_link(int sockfd, const char *type)
 
 	ln->local_sockfd = sockfd;
 	ln->server_sockfd = -1;
+	ln->server = server_ai;
 	ln->time = time(NULL);
 
 	if (link_head[sockfd] != NULL) {
@@ -593,6 +595,10 @@ struct link *create_link(int sockfd, const char *type)
 	}
 
 	link_head[sockfd] = ln;
+
+	if (strcmp(type, "client") == 0)
+		if (connect_server(sockfd) == -1)
+			goto err;
 
 	return ln;
 err:

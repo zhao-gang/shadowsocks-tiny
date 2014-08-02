@@ -140,6 +140,7 @@ extern int nfds;
 extern struct pollfd *clients;
 extern struct ss_option ss_opt;
 extern struct link **link_head;
+extern struct addrinfo *server_ai;
 
 void check_ss_option(int argc, char **argv, const char *type);
 void pr_data(FILE *fp, const char *name, char *data, int len);

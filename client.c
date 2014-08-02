@@ -20,6 +20,7 @@
 #include "log.h"
 
 char rsv_frag[3] = {0x00, 0x00, 0x00};
+struct addrinfo *server_ai;
 
 int parse_socks5_proto(int sockfd, struct link *ln)
 {
@@ -305,7 +306,6 @@ int main(int argc, char **argv)
 	int i, listenfd, sockfd;
 	int ret = 0;
 	struct link *ln;
-	struct addrinfo *server_ai = NULL;
 	struct addrinfo *local_ai = NULL;
 	struct addrinfo hint;
 
@@ -363,8 +363,6 @@ int main(int argc, char **argv)
 				if (ln == NULL) {
 					poll_del(sockfd);
 					close(sockfd);
-				} else {
-					ln->server = server_ai;
 				}
 			}
 		}
