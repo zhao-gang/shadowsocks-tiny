@@ -752,8 +752,7 @@ int connect_server(int sockfd)
 				/* it's ok to return inprogress, will
 				 * handle it later */
 				if (errno == EINPROGRESS) {
-					sock_debug(new_sockfd, "connect pending");
-					poll_set(new_sockfd, POLLOUT);
+					poll_add(new_sockfd, POLLOUT);
 					return 0;
 				} else {
 					goto err;
