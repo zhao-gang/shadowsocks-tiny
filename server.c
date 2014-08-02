@@ -171,7 +171,7 @@ int server_do_pollout(int sockfd, struct link *ln)
 		} else {
 			poll_rm(sockfd, POLLOUT);
 		}
-	} else {
+	} else if (sockfd == ln->server_sockfd) {
 		/* pending connect finished */
 		if (!(ln->state & SERVER)) {
 			if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR,
