@@ -740,6 +740,7 @@ int connect_server(int sockfd)
 			link_head[new_sockfd] = ln;
 			ln->server_sockfd = new_sockfd;
 			ln->time = time(NULL);
+			poll_set(new_sockfd, POLLIN);
 			ret = connect(new_sockfd, ai->ai_addr, ai->ai_addrlen);
 			if (ret == -1) {
 				/* it's ok to return inprogress, will
@@ -754,7 +755,6 @@ int connect_server(int sockfd)
 
 			/* sucessfully connected */
 			ln->state |= SERVER;
-			poll_set(new_sockfd, POLLIN);
 			sock_info(new_sockfd, "%s: connected", __func__);
 			return 0;
 		}
@@ -1230,7 +1230,6 @@ int do_send(int sockfd, struct link *ln, const char *type, int offset)
 		return -1;
 	}
 		
-	poll_set(sockfd, POLLIN);
 	sock_debug(sockfd, "%s(%s): send(%d), offset(%d)",
 		   __func__, type, ret, offset);
 	pr_link_debug(ln);
