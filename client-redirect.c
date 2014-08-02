@@ -228,12 +228,6 @@ int client_do_pollout(int sockfd, struct link *ln)
 				ln->state &= ~LOCAL_SEND_PENDING;
 			}
 
-			/* update socks5 state */
-			if (!(ln->state & SOCKS5_AUTH_REPLY_SENT))
-				ln->state &= SOCKS5_AUTH_REPLY_SENT;
-			else if (!(ln->state & SOCKS5_CMD_REPLY_SENT))
-				ln->state &= SOCKS5_CMD_REPLY_SENT;
-
 			goto out;
 		} else {
 			poll_rm(sockfd, POLLOUT);
