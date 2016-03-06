@@ -674,6 +674,7 @@ void destroy_link(int sockfd)
 int do_listen(struct addrinfo *info, const char *type_str)
 {
 	int sockfd, type;
+	int opt = 1;
 	struct addrinfo *lp = info;
 
 	if (strcmp(type_str, "tcp") == 0)
@@ -688,6 +689,9 @@ int do_listen(struct addrinfo *info, const char *type_str)
 			type |= SOCK_NONBLOCK;
 			sockfd = socket(lp->ai_family, type, 0);
 			if (sockfd == -1)
+				goto err;
+
+			if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) != 0)
 				goto err;
 
 			if (bind(sockfd, lp->ai_addr, lp->ai_addrlen) == -1)
