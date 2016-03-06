@@ -26,16 +26,16 @@ static const char supported_method[][MAX_METHOD_NAME_LEN] = {
 	"aes-192-cfb",
 	"aes-256-cfb",
 	"bf-cfb",
-	"camellia-128-cfb",
-	"camellia-192-cfb",
-	"camellia-256-cfb",
+	/* "camellia-128-cfb", */
+	/* "camellia-192-cfb", */
+	/* "camellia-256-cfb", */
 	"cast5-cfb",
 	"des-cfb",
-	"idea-cfb",
+	/* "idea-cfb", */
 	"rc2-cfb",
 	"rc4",
 	"seed-cfb",
-	"salsa20-ctr",
+	/* "salsa20-ctr", */
 };
 
 int get_method(char *password, char *method)
