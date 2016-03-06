@@ -41,7 +41,7 @@ static void usage_client(const char *name)
 	       "\t-u,--local_addr\t local Used address\n"
 	       "\t-b,--local_port\t local Binding port\n"
 	       "\t-k,--password\t your password\n"
-	       "\t-m,--method\t encryption algorithm\n"
+	       "\t-m,--method\t encryption algorithm(aes-*-cfb, bf-cfb, cast5-cfb, des-cfb, rc2-cfb, rc4, seed-cfb)\n"
 	       "\t-d,--daemon\t run as daemon\n"
 	       "\t-l,--log_level\t log level(0-7), default is LOG_NOTICE\n"
 	       "\t-h,--help\t print this help\n", name);
@@ -51,7 +51,7 @@ static void usage_server(const char *name)
 {
 	pr_err("Usage: %s [options]\n"
 	       "Options:\n"
-	       "\t-l,--local_addr\t local address\n"
+	       "\t-u,--local_addr\t local address\n"
 	       "\t-b,--local_port\t local port\n"
 	       "\t-k,--password\t your password\n"
 	       "\t-m,--method\t encryption algorithm\n"
@@ -85,6 +85,7 @@ static void parse_cmdline(int argc, char **argv, const char *type)
 	int len, opt;
 	int log_opt = LOG_CONS | LOG_PERROR;
 	int level = -1;
+	char missing[128] = "";
 	struct option *longopts;
 	const char *optstring;
 	void (*usage)(const char *name);
@@ -245,6 +246,32 @@ static void parse_cmdline(int argc, char **argv, const char *type)
 		}
 	}
 
+	if (strcmp(type, "client") == 0) {
+		if (strlen(ss_opt.server_addr) == 0)
+			strcat(missing, "-s ");
+
+		if (strlen(ss_opt.server_port) == 0)
+			strcat(missing, "-p ");
+	}
+
+	if (strlen(ss_opt.local_addr) == 0)
+		strcat(missing, "-u ");
+
+	if (strlen(ss_opt.local_port) == 0)
+		strcat(missing, "-b ");
+
+	if (strlen(ss_opt.password) == 0)
+		strcat(missing, "-k ");
+
+	if (strlen(ss_opt.method) == 0)
+		strcat(missing, "-m ");
+
+	if (strlen(missing) != 0) {
+		pr_err("Missing parameter(s): %s\n", missing);
+		usage(argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
 	/* reopen log to user specified level */
 	closelog();
 	if (strcmp(type, "client") == 0)
@@ -260,29 +287,7 @@ static void parse_cmdline(int argc, char **argv, const char *type)
 
 void check_ss_option(int argc, char **argv, const char *type)
 {
-	void (*usage)(const char *name);
-
 	parse_cmdline(argc, argv, type);
-
-	if (strcmp(type, "client") == 0) {
-		usage = usage_client;
-		if (strlen(ss_opt.server_addr) == 0 ||
-		    strlen(ss_opt.server_port) == 0) {
-			pr_err("Either server address or server port "
-			       "is not specified\n");
-			goto err;
-		}
-	} else if (strcmp(type, "server") == 0) {
-		usage = usage_server;
-	} else {
-		pr_exit("%s: unknown type\n", __func__);
-	}
-
-	if (strlen(ss_opt.local_addr) == 0 || strlen(ss_opt.local_port) == 0) {
-		pr_err("Either local address or local port "
-		       "is not specified\n");
-		goto err;
-	}
 
 	if (daemonize) {
 		if (daemon(0, 0) == -1)
@@ -290,10 +295,6 @@ void check_ss_option(int argc, char **argv, const char *type)
 	}
 
 	pr_ss_option(type);
-	return;
-err:
-	usage(argv[0]);
-	exit(EXIT_FAILURE);
 }
 
 void pr_data(FILE *fp, const char *name, char *data, int len)
