@@ -185,7 +185,7 @@ err:
 	return -1;
 }
 
-int encrypt(int sockfd, struct link *ln)
+int crypto_encrypt(int sockfd, struct link *ln)
 {
 	int len, cipher_len;
 	EVP_CIPHER_CTX *ctx_p;
@@ -223,7 +223,7 @@ err:
 	return -1;
 }
 
-int decrypt(int sockfd, struct link *ln)
+int crypto_decrypt(int sockfd, struct link *ln)
 {
 	int len, text_len;
 	EVP_CIPHER_CTX *ctx_p;

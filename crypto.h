@@ -15,7 +15,7 @@ extern int iv_len;
 
 int crypto_init(char *key, char *method);
 void crypto_exit(void);
-int encrypt(int sockfd, struct link *ln);
-int decrypt(int sockfd, struct link *ln);
+int crypto_encrypt(int sockfd, struct link *ln);
+int crypto_decrypt(int sockfd, struct link *ln);
 
 #endif

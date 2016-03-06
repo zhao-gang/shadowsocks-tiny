@@ -36,7 +36,7 @@ int server_do_remote_read(int sockfd, struct link *ln)
 			goto out;
 	}
 
-	if (encrypt(sockfd, ln) == -1)
+	if (crypto_encrypt(sockfd, ln) == -1)
 		goto out;
 
 	ret = do_send(ln->local_sockfd, ln, "cipher", 0);
@@ -91,7 +91,7 @@ int server_do_local_read(int sockfd, struct link *ln)
 		}
 	}
 
-	if (decrypt(sockfd, ln) == -1)
+	if (crypto_decrypt(sockfd, ln) == -1)
 		goto out;
 
 	if (ln->state & SS_UDP) {
