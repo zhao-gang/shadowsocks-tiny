@@ -71,9 +71,11 @@ err:
 
 int crypto_init(char *password, char *method)
 {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
 	OPENSSL_config(NULL);
+#endif
 
 	if (get_method(password, method) == -1)
 		return -1;
@@ -83,8 +85,10 @@ int crypto_init(char *password, char *method)
 
 void crypto_exit(void)
 {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 	EVP_cleanup();
 	ERR_free_strings();
+#endif
 }
 
 int add_iv(int sockfd, struct link *ln)
